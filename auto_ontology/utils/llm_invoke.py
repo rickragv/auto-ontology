@@ -210,6 +210,25 @@ _NON_REASONING_BASE_URL = resolve("NON_REASONING", "ENDPOINT")
 _NON_REASONING_MODEL_NAME = resolve("NON_REASONING", "MODEL")
 _NON_REASONING_API_KEY = resolve("NON_REASONING", "API_KEY")
 
+_CLIENT_KINDS = ("auto", "openai", "nvidia")
+
+
+def _resolve_client_kind(prefix: str) -> str:
+    """``<prefix>_CLIENT`` (else ``DEFAULT_MODELS_CLIENT``), normalised; unset is ``auto``."""
+    raw = resolve(prefix, "CLIENT")
+    kind = raw.strip().lower() or "auto"
+    if kind not in _CLIENT_KINDS:
+        raise ValueError(
+            f"Invalid {prefix}_CLIENT (or DEFAULT_MODELS_CLIENT) value {raw!r}; "
+            f"expected one of: {', '.join(_CLIENT_KINDS)}"
+        )
+    return kind
+
+
+# Chat client per role: "auto" (model-name prefix rule), "openai" or "nvidia".
+_CLIENT_KIND = _resolve_client_kind("REASONING")
+_NON_REASONING_CLIENT_KIND = _resolve_client_kind("NON_REASONING")
+
 
 def _build_client(
     *,
@@ -218,14 +237,18 @@ def _build_client(
     base_url: str,
     temperature: float,
     max_tokens: int,
+    client_kind: str = "auto",
 ) -> BaseChatModel:
     """Build a chat client for the given model/endpoint.
 
-    OpenAI-family models (``openai/``, ``azure/``, ``aws/`` prefixes) go through
-    ``ChatOpenAI``, which supports structured output. Everything else uses
-    ``ChatNVIDIA``.
+    With ``client_kind="auto"``, OpenAI-family models (``openai/``, ``azure/``,
+    ``aws/`` prefixes) go through ``ChatOpenAI``, which supports structured
+    output, and everything else uses ``ChatNVIDIA``. ``"openai"`` or
+    ``"nvidia"`` forces that client for any model name.
     """
-    if model.startswith(("openai/", "azure/", "aws/")):
+    if client_kind == "openai" or (
+        client_kind == "auto" and model.startswith(("openai/", "azure/", "aws/"))
+    ):
         from langchain_openai import ChatOpenAI
 
         return ChatOpenAI(
@@ -276,6 +299,7 @@ def get_llm_client(
         base_url=_BASE_URL,
         temperature=temperature,
         max_tokens=max_tokens,
+        client_kind=_CLIENT_KIND,
     )
 
 
@@ -305,6 +329,7 @@ def get_non_reasoning_llm_client(
         base_url=_NON_REASONING_BASE_URL,
         temperature=temperature,
         max_tokens=max_tokens,
+        client_kind=_NON_REASONING_CLIENT_KIND,
     )
     _remember_non_reasoning(client)
     return client
