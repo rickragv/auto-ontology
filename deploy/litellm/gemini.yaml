@@ -1,0 +1,66 @@
+# SPDX-License-Identifier: Apache-2.0
+# UNTESTED: written from provider documentation on 2026-11-11 without a Gemini
+# API key. No request has been sent to Gemini with this preset.
+#
+# LiteLLM gateway preset: chat and embeddings on Gemini (Google AI Studio).
+# Used by docker-compose.litellm.yml when LITELLM_PRESET=gemini.
+# Backend settings to match: deploy/litellm/env.gemini.example.
+#
+# The backend asks for the aliases under model_name. Swap a model by changing
+# only its litellm_params; the backend keeps working without edits. Aliases must
+# not start with openai/, azure/ or aws/ and must not contain "claude" or
+# "anthropic": the backend picks its client and structured-output method from
+# the model name.
+#
+# Needs GEMINI_API_KEY in .env or the shell; docker-compose.litellm.yml passes
+# it to the gateway. Without it every Gemini request fails inside the gateway
+# with "Missing Gemini API key" and nothing is sent.
+
+model_list:
+  - model_name: ao-chat
+    litellm_params:
+      # The gemini/ prefix is Google AI Studio with an API key. Without it
+      # LiteLLM routes to Vertex AI, which needs Google Cloud credentials.
+      model: gemini/gemini-3.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+      # No temperature. LiteLLM's Gemini docs say to leave it unset on Gemini 3,
+      # and from LiteLLM 1.109 this model answers 400 to temperature, top_p
+      # and top_k unless drop_params is on. The backend sends none.
+      # Thinking cannot be switched off on Gemini 3. This model's default level
+      # is minimal; reasoning_effort "none" maps to minimal too. Thinking tokens
+      # count against the backend's max_tokens (8192).
+
+  - model_name: ao-embed
+    litellm_params:
+      # gemini-embedding-001, not the newer gemini-embedding-2: the backend
+      # always sends input_type, LiteLLM always turns it into a taskType, and
+      # gemini-embedding-2 accepts no taskType. Neither drop_params nor
+      # additional_drop_params removes it.
+      model: gemini/gemini-embedding-001
+      api_key: os.environ/GEMINI_API_KEY
+      # Replaces the taskType LiteLLM would build from the backend's
+      # input_type ("passage" or "query"), which is not a Gemini task type.
+      # One fixed type for both sides keeps stored rows and search strings
+      # comparable; Gemini's own query/document pair needs a backend change.
+      task_type: SEMANTIC_SIMILARITY
+      # Sent to Gemini as outputDimensionality. The model returns 3072 by
+      # default; 1536 is one of Google's recommended sizes, scores the same in
+      # Google's own table and halves the vector tables. EMBED_DIMENSIONS must
+      # match. Remove this line and set EMBED_DIMENSIONS=3072 for full size.
+      dimensions: 1536
+    model_info:
+      mode: embedding
+    # LiteLLM leaves the backend's truncate and modality out of the Gemini
+    # request. Google says vectors below 3072 dimensions from this model are
+    # not normalised. The backend does not normalise them either, and does not
+    # need to: its vector index uses cosine distance, which ignores length.
+
+  # No rerank model. Requests for any other alias, ao-rerank included, get
+  # HTTP 400 without leaving the gateway.
+
+litellm_settings:
+  # Drop request fields a provider does not support instead of failing.
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

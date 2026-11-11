@@ -1,0 +1,60 @@
+# SPDX-License-Identifier: Apache-2.0
+# UNTESTED: written from provider documentation on 2026-11-11 without a Gemini
+# API key. No request has been sent to Gemini with this preset.
+#
+# LiteLLM gateway preset: chat on the host's Ollama, embeddings on Gemini
+# (Google AI Studio). Used by docker-compose.litellm.yml when
+# LITELLM_PRESET=mixed. Backend settings to match: deploy/litellm/env.mixed.example.
+#
+# ao-chat is the same as in ollama.yaml and ao-embed the same as in
+# gemini.yaml; see those files for why each line is there. Keep them in step
+# when either changes.
+#
+# The backend asks for the aliases under model_name. Swap a model by changing
+# only its litellm_params; the backend keeps working without edits. Aliases must
+# not start with openai/, azure/ or aws/ and must not contain "claude" or
+# "anthropic": the backend picks its client and structured-output method from
+# the model name.
+#
+# Pull the chat model first on the host:  ollama pull qwen3.5:9b
+# Needs GEMINI_API_KEY in .env or the shell for embeddings.
+
+model_list:
+  - model_name: ao-chat
+    litellm_params:
+      # Keep the ollama_chat/ prefix when swapping: it is what forwards num_ctx
+      # and maps reasoning_effort "none" to Ollama's think=false.
+      model: ollama_chat/qwen3.5:9b
+      api_base: http://host.docker.internal:11434
+      # Context window. Ollama's default here is 4096 tokens and it truncates
+      # longer prompts silently; the stack's prompts need more. Larger values
+      # cost GPU memory.
+      num_ctx: 16384
+      # The backend sends no temperature, so the model's own sampling defaults
+      # apply. Add "temperature: 0" here for repeatable answers.
+
+  - model_name: ao-embed
+    litellm_params:
+      # gemini-embedding-001, not gemini-embedding-2: the backend always sends
+      # input_type, which LiteLLM turns into a taskType that gemini-embedding-2
+      # does not accept.
+      model: gemini/gemini-embedding-001
+      api_key: os.environ/GEMINI_API_KEY
+      # Replaces the invalid taskType LiteLLM would build from input_type.
+      task_type: SEMANTIC_SIMILARITY
+      # Sent as outputDimensionality (default 3072). EMBED_DIMENSIONS must match.
+      dimensions: 1536
+    model_info:
+      mode: embedding
+    # Not normalised by Google below 3072 dimensions, nor by the backend; the
+    # vector index uses cosine distance, which ignores length.
+
+  # No rerank model. Requests for any other alias, ao-rerank included, get
+  # HTTP 400 without leaving the gateway.
+
+litellm_settings:
+  # Drop request fields a provider does not support instead of failing.
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
