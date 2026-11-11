@@ -440,3 +440,25 @@ Settle each by measurement, then record the answer here.
 - Copy that clone's `.env` here by hand as a starting point. It contains real secrets:
   never print, log or commit its values.
 - Ollama runs on the host at `http://host.docker.internal:11434` from inside containers.
+- **Do not run the full test suite with `.env` pointing at a live stack.**
+  `auto_ontology/tests/conftest.py` calls `load_dotenv()`, so once `.env` exists
+  `uv run pytest auto_ontology dev_tools` sees `POSTGRES_*` and the roughly 800
+  database tests stop skipping and run against whatever Postgres `.env` names. On
+  2026-11-12 this hit the running `aofork` stack: the run was stopped after more than
+  10 minutes, the live data was checked and found intact, and one leftover throwaway
+  database (`difftest_*`) was dropped. Narrower runs (`auto_ontology/utils`,
+  `semantic`, `vdb`) do not load that conftest. For the full suite, export `POSTGRES_*`
+  for a disposable `pgvector/pgvector:pg17` first (existing variables win over `.env`),
+  run `uv run alembic upgrade head` against it, then run pytest. That alone is not
+  enough: a second attempt that way still loaded the model endpoints from `.env`
+  (`http://litellm:4000`, which does not resolve from the host) and managed 37 tests in
+  32 minutes before it was stopped. The reliable way is to run from a clean export with
+  no `.env`: `git archive HEAD | tar -x -C <dir>`, then run pytest in `<dir>` with the
+  repo's virtualenv.
+- **Full suite on the committed tree `c2b822f3`, clean export, no database
+  (2026-11-12):** 1919 passed, 812 skipped, 20 failed, 2 errors in 83 s. The failures
+  are the same environmental set as on 2026-11-11 (18 kumo, `test_dal_surface`,
+  `test_frontend_schema_qualified`, plus the `test_nullability` and `test_records`
+  errors); the licensing test skips outside a git checkout. The database tests have
+  still not been run to completion against a real Postgres, apart from
+  `auto_ontology/vdb` (56 passed) and `dal/tests/test_reset.py` (14 passed).
