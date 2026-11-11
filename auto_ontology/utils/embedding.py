@@ -100,6 +100,17 @@ def _env_positive_int(name: str, default: int) -> int:
     return value
 
 
+def _env_nvidia_fields() -> bool:
+    """Whether ``EMBED_EXTRA_PARAMS`` keeps the NVIDIA body fields (the default)."""
+    raw = os.environ.get("EMBED_EXTRA_PARAMS", "")
+    choice = raw.strip().lower()
+    if choice in ("", "nvidia"):
+        return True
+    if choice == "none":
+        return False
+    raise ValueError(f"EMBED_EXTRA_PARAMS must be 'nvidia' or 'none', got {raw!r}.")
+
+
 @dataclass(frozen=True)
 class EmbedParams:
     """Where and how to embed. The key is kept out of ``repr`` and so out of logs."""
@@ -118,6 +129,10 @@ class EmbedParams:
         default_factory=lambda: _env_positive_int("EMBED_MAX_CONCURRENT", 32)
     )
     request_timeout_s: float = 600.0
+    # Whether each request carries ``input_type``, ``truncate`` and ``modality``.
+    # ``EMBED_EXTRA_PARAMS=none`` drops them for a provider or gateway that
+    # rejects or mistranslates them; read like the two settings above.
+    nvidia_fields: bool = field(default_factory=_env_nvidia_fields)
 
 
 def get_embed_params() -> EmbedParams:
@@ -215,7 +230,9 @@ def embed_texts(
                 "input_type": input_type,
                 "truncate": "END",
                 "modality": params.embed_modality,
-            },
+            }
+            if params.nvidia_fields
+            else None,
             timeout=timeout or params.request_timeout_s,
             extra_headers=None if params.api_key else _NO_AUTH,
         )
