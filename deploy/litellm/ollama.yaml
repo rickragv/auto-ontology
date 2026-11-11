@@ -20,7 +20,8 @@ model_list:
       api_base: http://host.docker.internal:11434
       # Context window. Ollama's default here is 4096 tokens and it truncates
       # longer prompts silently; the stack's prompts need more. Larger values
-      # cost GPU memory (16384 fits qwen3.5:9b plus bge-m3 in 8 GB).
+      # cost GPU memory: at 16384 on an 8 GB GPU with bge-m3 also loaded, about
+      # 14% of qwen3.5:9b ran on the CPU (roughly 13 tokens/s).
       num_ctx: 16384
       # The backend sends no temperature, so the model's own sampling defaults
       # apply. Add "temperature: 0" here for repeatable answers.
