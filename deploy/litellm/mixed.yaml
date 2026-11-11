@@ -35,9 +35,12 @@ model_list:
 
   - model_name: ao-embed
     litellm_params:
-      # gemini-embedding-001, not gemini-embedding-2: the backend always sends
-      # input_type, which LiteLLM turns into a taskType that gemini-embedding-2
-      # does not accept.
+      # gemini-embedding-001, not gemini-embedding-2: by default the backend
+      # sends input_type, which LiteLLM turns into a taskType that
+      # gemini-embedding-2 does not accept. The backend can now omit the field
+      # with EMBED_EXTRA_PARAMS=none. This preset keeps gemini-embedding-001 with
+      # a fixed task_type because that needs no extra backend setting. Neither
+      # combination has been tested against Gemini.
       model: gemini/gemini-embedding-001
       api_key: os.environ/GEMINI_API_KEY
       # Replaces the invalid taskType LiteLLM would build from input_type.

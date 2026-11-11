@@ -32,16 +32,19 @@ model_list:
 
   - model_name: ao-embed
     litellm_params:
-      # gemini-embedding-001, not the newer gemini-embedding-2: the backend
-      # always sends input_type, LiteLLM always turns it into a taskType, and
-      # gemini-embedding-2 accepts no taskType. Neither drop_params nor
-      # additional_drop_params removes it.
+      # gemini-embedding-001, not the newer gemini-embedding-2. By default the
+      # backend sends input_type, LiteLLM turns it into a taskType, and
+      # gemini-embedding-2 accepts no taskType; neither drop_params nor
+      # additional_drop_params removes it. The backend can now omit the field
+      # with EMBED_EXTRA_PARAMS=none. This preset keeps gemini-embedding-001 with
+      # a fixed task_type because that needs no extra backend setting. Neither
+      # combination has been tested against Gemini.
       model: gemini/gemini-embedding-001
       api_key: os.environ/GEMINI_API_KEY
       # Replaces the taskType LiteLLM would build from the backend's
       # input_type ("passage" or "query"), which is not a Gemini task type.
       # One fixed type for both sides keeps stored rows and search strings
-      # comparable; Gemini's own query/document pair needs a backend change.
+      # comparable; Gemini's own query/document pair is not used here.
       task_type: SEMANTIC_SIMILARITY
       # Sent to Gemini as outputDimensionality. The model returns 3072 by
       # default; 1536 is one of Google's recommended sizes, scores the same in

@@ -54,6 +54,7 @@ four triplets for that reason.
 | `EMBED_DIMENSIONS` | unset (2048 columns, as upstream) | Whole number from 1 to 4000 | `ValueError` when the vector store is first opened (`get_vdb`), not at import. |
 | `EMBED_BATCH_SIZE` | 32 | Whole number, 1 or more | `ValueError` when the embedding parameters are first built, that is on the first embedding call. |
 | `EMBED_MAX_CONCURRENT` | 32 | Whole number, 1 or more | Same as `EMBED_BATCH_SIZE`. |
+| `EMBED_EXTRA_PARAMS` | `nvidia` | `nvidia` or `none` (case and surrounding spaces ignored; unset or blank means `nvidia`) | `ValueError` when the embedding parameters are first built, that is on the first embedding call, not at startup. |
 | `RERANK_ENDPOINT=disabled` | unset (NVIDIA or configured endpoint) | The literal word `disabled`, any case | Not applicable; any other value is used as a URL. |
 
 Details:
@@ -77,6 +78,12 @@ Details:
 - **Embedding concurrency.** `EMBED_MAX_CONCURRENT` limits requests in flight per
   embedding call, not per process. Two ingests running at once each get their own pool,
   so the total can be higher than the setting.
+- **Embedding request fields.** By default each embedding request carries the NVIDIA
+  fields `input_type`, `truncate` and `modality`. `EMBED_EXTRA_PARAMS=none` sends a plain
+  OpenAI embeddings body instead: only `model`, `input` and `encoding_format`. Use it for
+  a provider or gateway that rejects or mistranslates the fields. The text prefix that
+  `nemotron-3.5-embed-1b-nvfp4` uses for query and passage is part of the input, so
+  `none` does not change it.
 - **Rerank.** With `RERANK_ENDPOINT=disabled`, no request is sent. The only caller,
   bridge-table owner selection, takes the first candidate term and logs one INFO line.
   Without it, a missing rerank model logs an error with a traceback each time and takes
@@ -251,6 +258,10 @@ throwaway `pgvector/pgvector:pg17` and passed. Ruff check and format check were 
   median about 59 s, no timeouts). Two asks needed one SQL repair round each. "Right"
   was judged on the returned rows: the answer text describes the query and does not
   state the district or the number.
+
+**`EMBED_EXTRA_PARAMS`.** Checked with unit tests and against a local stand-in for
+Google's API through LiteLLM 1.108.5: with `none`, no `taskType` is sent unless the
+gateway config sets one. It was not sent to real Gemini.
 
 **Check inside the rebuilt backend container.** With `RERANK_ENDPOINT=disabled`, a
 rerank call raised `RerankDisabled` and sent no request. With `EMBED_BATCH_SIZE=5` and
