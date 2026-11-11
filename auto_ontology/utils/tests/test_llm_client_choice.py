@@ -153,6 +153,48 @@ def test_unknown_shared_default_is_rejected_too(
         _resolve_client_kind("REASONING")
 
 
+# --- LLM_REASONING_EFFORT ---------------------------------------------------
+
+
+def test_reasoning_effort_is_absent_from_the_request_when_unset() -> None:
+    assert "reasoning_effort" not in _payload(_build("openai/x"))
+
+
+def test_reasoning_effort_is_absent_from_the_request_when_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_REASONING_EFFORT", "")
+
+    assert "reasoning_effort" not in _payload(_build("openai/x"))
+
+
+def test_reasoning_effort_is_sent_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LLM_REASONING_EFFORT", "none")
+
+    payload = _payload(_build("ollama/x", client_kind="openai"))
+
+    assert payload["reasoning_effort"] == "none"
+
+
+def test_reasoning_effort_is_read_on_every_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = _build("openai/x")
+    monkeypatch.setenv("LLM_REASONING_EFFORT", "low")
+    second = _build("openai/x")
+
+    assert "reasoning_effort" not in _payload(first)
+    assert _payload(second)["reasoning_effort"] == "low"
+
+
+def test_reasoning_effort_is_not_applied_to_nvidia_clients(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_REASONING_EFFORT", "none")
+
+    assert isinstance(_build("openai/x", client_kind="nvidia"), ChatNVIDIA)
+
+
 # --- Wiring -----------------------------------------------------------------
 
 
