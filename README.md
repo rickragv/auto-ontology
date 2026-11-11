@@ -422,6 +422,13 @@ that support structured output, and keep the embedding model the same for
 ingestion and queries. [`.env.example`](./.env.example) documents every
 variable.
 
+#### Other model providers (fork)
+
+This fork can run on other providers through an optional LiteLLM gateway. An
+Ollama preset is included and tested; others are planned. Setup, the new
+settings, and what was and was not tested are in
+[docs/model-providers.md](./docs/model-providers.md).
+
 ### Predictions
 
 Set `KUMO_RFM_API_KEY` and the agent routes predictive questions to KumoRFM.
