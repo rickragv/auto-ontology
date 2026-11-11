@@ -112,8 +112,9 @@ def check_vector_size(
         f"embeddings, but the vector store is configured for {expected} "
         f"({EMBED_DIMENSIONS_ENV}; 2048 when unset). Stored embeddings cannot "
         f"be resized. Either set {EMBED_DIMENSIONS_ENV}={existing} and use the "
-        "embedding model that produced them, or regenerate them at the new "
-        f"size: drop {schema_name}.{table_name} and the other vector tables in "
-        f"schema {schema_name} (they hold embeddings from the same model), "
-        "then re-ingest every data source."
+        "embedding model that produced them, or rebuild at the new size: drop "
+        f"{schema_name}.{table_name} and the other vector tables in schema "
+        f"{schema_name}, re-ingest every data source, then re-save or reset "
+        "the semantic layer, which a re-ingest does not re-embed (see "
+        "docs/model-providers.md)."
     )
