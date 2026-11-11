@@ -5,6 +5,7 @@
 """VDB initialization — data layer and semantic layer collections."""
 
 from auto_ontology.infra.postgres import get_postgres_connection_string
+from auto_ontology.vdb.dimensions import configured_embed_dimensions
 from auto_ontology.vdb.postgres import PostgresVDB
 
 DATA_VDB_COLLECTION: str = "data_objects_layer"
@@ -30,6 +31,9 @@ def get_vdb(
     }
     if database_name:
         kwargs["database_name"] = database_name
+    vector_size = configured_embed_dimensions()
+    if vector_size is not None:
+        kwargs["vector_size"] = vector_size
     return PostgresVDB(reset=reset, **kwargs)
 
 

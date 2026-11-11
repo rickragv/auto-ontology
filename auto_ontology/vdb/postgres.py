@@ -25,6 +25,8 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_postgres import Column, PGEngine, PGVectorStore
 
+from auto_ontology.vdb.dimensions import check_vector_size, lookup_vector_table
+
 logger = logging.getLogger(__name__)
 
 _DATABASE_METADATA_COLUMN = "database_name"
@@ -255,7 +257,12 @@ class PostgresVDB:
             return self._store
 
         engine = self._get_engine()
-        if not self._table_exists():
+        # Existence and the stored vector size in one query, so the size
+        # check below costs no extra connection.
+        exists, existing_size = lookup_vector_table(
+            self.connection_string, self.schema_name, self.collection_name
+        )
+        if not exists:
             self._ensure_schema()
             engine.init_vectorstore_table(
                 table_name=self.collection_name,
@@ -267,6 +274,10 @@ class PostgresVDB:
                 ],
             )
             self._create_vector_index()
+        else:
+            check_vector_size(
+                self.schema_name, self.collection_name, existing_size, self.vector_size
+            )
 
         self._store = PGVectorStore.create_sync(
             engine=engine,
