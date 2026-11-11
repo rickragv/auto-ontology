@@ -13,8 +13,9 @@ LiteLLM.
 This is a fork feature, not part of upstream NVIDIA/auto-ontology. Every new setting is
 optional. With none of them set, behaviour is the same as upstream.
 
-Only the Ollama preset exists today. See [What was tested](#what-was-tested) and
-[What was not tested](#what-was-not-tested) before you rely on anything here.
+Only the Ollama preset is tested. Gemini and mixed presets exist as untested drafts. See
+[What was tested](#what-was-tested) and [What was not tested](#what-was-not-tested)
+before you rely on anything here.
 
 ## How model selection works
 
@@ -68,17 +69,11 @@ Details:
   A vector table keeps the size it was created with. If you change `EMBED_DIMENSIONS` or
   the embedding model on a database that already has vector tables, the first use of an
   existing table raises `VectorSizeMismatchError`. The message names both sizes and
-  tells you to either set `EMBED_DIMENSIONS` back to the stored size with the model that
-  produced it, or drop the vector tables in the `vdb` schema and re-ingest every data
-  source.
-- **Custom analyses, SQL attributes and PQL analyses (unverified).** These are embedded
-  into the semantic vector table when they are saved. Whether a re-ingest regenerates
-  those embeddings after the tables are dropped has not been checked. They may stop
-  appearing in search until saved again. Check this before relying on drop and
-  re-ingest for data you cannot recreate.
-- **Deleting a datasource after a mismatch (unverified).** With a dimension mismatch,
-  deleting one datasource may fail partway, after the catalog change has committed. The
-  plan for this fork lists it as an open question.
+  tells you how to recover; the full procedure is under
+  [Changing the embedding model or dimension](#changing-the-embedding-model-or-dimension).
+- **Deleting a datasource after a mismatch.** Deletes are not blocked by the size check,
+  so a datasource can still be removed while the setting and the tables disagree. Writes
+  and searches raise the error.
 - **Embedding concurrency.** `EMBED_MAX_CONCURRENT` limits requests in flight per
   embedding call, not per process. Two ingests running at once each get their own pool,
   so the total can be higher than the setting.
@@ -86,6 +81,39 @@ Details:
   bridge-table owner selection, takes the first candidate term and logs one INFO line.
   Without it, a missing rerank model logs an error with a traceback each time and takes
   the same fallback.
+
+## Changing the embedding model or dimension
+
+Vector tables keep the size they were created with. Stored vectors cannot be resized, and
+vectors from different models cannot be compared.
+
+**Option 1, no loss.** Set `EMBED_DIMENSIONS` back to the size the tables were built
+with, and use the model that produced those vectors.
+
+**Option 2, rebuild at the new size.**
+
+1. Stop the backend and the ingestion service. Do not let a compilation pass run while
+   the settings and the tables disagree: it stores Terms and SQL attributes without
+   vectors, and later passes skip those tables.
+2. Set the new `EMBED_MODEL` and `EMBED_DIMENSIONS`.
+3. Drop both vector tables. This removes only embeddings:
+   `DROP TABLE IF EXISTS vdb.data_objects_layer, vdb.semantic_layer;`
+4. Start the services. The startup ingest recreates `vdb.data_objects_layer` at the new
+   size and re-embeds every table and column.
+5. Re-embed the semantic layer. **This does not happen on its own.** Compilation only
+   works on tables that have no Term yet, so existing Terms, column attributes, SQL
+   attributes, custom analyses and predictive analyses stay out of search, and there is
+   no re-embed command. Either:
+   - Re-save each item, which keeps everything. Term or column attribute: save its
+     description. SQL attribute: save it with its SQL expression. Custom or predictive
+     analysis: edit and save.
+   - Or reset the semantic layer (`POST /api/semantic-compilation/reset`). It recompiles
+     Terms, attributes and generated SQL attributes with the LLM, but deletes everything
+     users wrote: edits to Terms and attributes, manual SQL attributes, custom analyses
+     and predictive analyses, in every database.
+
+This procedure comes from reading the code and one probe of the compilation work list. A
+full drop and rebuild has not been run end to end.
 
 ## The gateway
 
@@ -219,7 +247,10 @@ throwaway `pgvector/pgvector:pg17` and passed. Ruff check and format check were 
   schema alone labelled `A11` as "Total Revenue Or Sales Count", so no term meant salary.
 - After loading the BIRD column descriptions (54 columns) and recompiling (86.9 s, same
   counts), one ask returned Hl.m. Praha, 12,541 in 46.6 s with no configuration change.
-  It was asked once, so its reliability is not established.
+- Asked six more times in that state, it was right 6 times out of 6 (43 to 146 s,
+  median about 59 s, no timeouts). Two asks needed one SQL repair round each. "Right"
+  was judged on the returned rows: the answer text describes the query and does not
+  state the district or the number.
 
 **Check inside the rebuilt backend container.** With `RERANK_ENDPOINT=disabled`, a
 rerank call raised `RerankDisabled` and sent no request. With `EMBED_BATCH_SIZE=5` and
@@ -229,13 +260,32 @@ rerank call raised `RerankDisabled` and sent no request. With `EMBED_BATCH_SIZE=
 Read this plainly: with a 9B local model and no column descriptions, the stack gave a
 wrong answer every time. This is a limitation of the small model and the missing
 descriptions. The same limitation was seen on direct Ollama without the gateway, so it
-is not caused by the gateway. Descriptions improved the one run measured, and no more
-than that is known.
+is not caused by the gateway. With column descriptions loaded it was right 7 times out
+of 7 on this one question; other questions were not measured.
 
 ## What was not tested
 
-- Gemini and mixed (Ollama chat, Gemini embeddings) presets. No preset files exist for
-  them yet. They are planned, and nothing here should be read as available.
+- Gemini and mixed (Ollama chat, Gemini embeddings) presets. Draft files exist:
+  `deploy/litellm/gemini.yaml`, `mixed.yaml`, `env.gemini.example` and
+  `env.mixed.example`. They were written from provider documentation without a Gemini
+  API key, and no request has been sent to Gemini with them. Checked offline only: both
+  configs load in the gateway; with no key, Gemini requests fail inside the gateway with
+  HTTP 500 and nothing is sent; the request bodies LiteLLM builds were read from a local
+  stand-in for Google; the Ollama chat model answered through `mixed.yaml`. Unverified:
+  - That Gemini accepts the model names `gemini-3.5-flash-lite` and
+    `gemini-embedding-001` with a real key.
+  - That Gemini accepts the embedding request (`taskType: SEMANTIC_SIMILARITY`,
+    `outputDimensionality: 1536`) and returns 1536 values per text.
+  - That Gemini accepts the backend's structured-output schemas, sent as
+    `response_json_schema` with `$defs`, `$ref` and `additionalProperties: false`, and
+    that the answers validate.
+  - Retrieval quality with one task type for both stored rows and search strings.
+  - Free-tier rate limits. The figures in the env files are third-party; Google shows
+    limits only in AI Studio. Whether the lowered concurrency settings avoid failed
+    steps is not known.
+  - What Gemini does with an embedding input over 2,048 tokens. LiteLLM drops the
+    backend's `truncate` field.
+  - Runs 2 and 3 of the plan's live matrix (full ingest and the test question).
 - Any hosted provider.
 - A working rerank model through the gateway. Without a rerank model the gateway answers
   `/rerank` with HTTP 400 and the backend falls back to the first candidate.
