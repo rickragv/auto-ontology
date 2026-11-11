@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: Apache-2.0
+# Optional LiteLLM gateway: one OpenAI-compatible endpoint in front of any model
+# provider. Upstream's docker-compose.yml is unchanged; this file is layered on top.
+#
+#   With the stack:  docker compose -f docker-compose.yml -f docker-compose.litellm.yml up -d
+#   Gateway only:    docker compose -f docker-compose.litellm.yml up -d
+#
+# Requires LITELLM_MASTER_KEY in .env or the shell. LITELLM_PRESET selects
+# deploy/litellm/<preset>.yaml (default: ollama). The backend reaches the gateway
+# at http://litellm:4000/v1 over the stack's default network; the host reaches it
+# at http://127.0.0.1:4000/v1. Backend settings per preset:
+# deploy/litellm/env.<preset>.example.
+#
+# Stateless by design: no database, so no virtual keys, spend tracking or admin UI
+# persistence. The master key is the only credential the gateway accepts.
+
+services:
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.108.5
+    container_name: auto-ontology-litellm
+    restart: unless-stopped
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    ports:
+      - "127.0.0.1:4000:4000"
+    volumes:
+      - ./deploy/litellm/${LITELLM_PRESET:-ollama}.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
+      # Use the model price map bundled in the image instead of fetching it from
+      # GitHub at every start.
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      # Provider keys, read by the presets as os.environ/<NAME>. Empty when unset.
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    # Lets a Linux host's Ollama be reached as host.docker.internal, as it already
+    # is on Docker Desktop.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # /health/liveliness needs no key. The image has no curl, so use its Python.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python3",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/liveliness', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+      start_interval: 5s

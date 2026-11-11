@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: Apache-2.0
+# LiteLLM gateway preset: chat and embeddings on the host's Ollama.
+# Used by docker-compose.litellm.yml when LITELLM_PRESET=ollama (the default).
+# Backend settings to match: deploy/litellm/env.ollama.example.
+#
+# The backend asks for the aliases under model_name. Swap a model by changing
+# only its litellm_params; the backend keeps working without edits. Aliases must
+# not start with openai/, azure/ or aws/ and must not contain "claude" or
+# "anthropic": the backend picks its client and structured-output method from
+# the model name.
+#
+# Pull the models first on the host:  ollama pull qwen3.5:9b && ollama pull bge-m3
+
+model_list:
+  - model_name: ao-chat
+    litellm_params:
+      # Keep the ollama_chat/ prefix when swapping: it is what forwards num_ctx
+      # and maps reasoning_effort "none" to Ollama's think=false.
+      model: ollama_chat/qwen3.5:9b
+      api_base: http://host.docker.internal:11434
+      # Context window. Ollama's default here is 4096 tokens and it truncates
+      # longer prompts silently; the stack's prompts need more. Larger values
+      # cost GPU memory (16384 fits qwen3.5:9b plus bge-m3 in 8 GB).
+      num_ctx: 16384
+      # The backend sends no temperature, so the model's own sampling defaults
+      # apply. Add "temperature: 0" here for repeatable answers.
+
+  - model_name: ao-embed
+    litellm_params:
+      # Keep the openai/ prefix and the /v1 base for Ollama embeddings. The
+      # backend sends truncate="END"; Ollama's OpenAI-compatible endpoint
+      # ignores it, while the native ollama/ route forwards it and Ollama
+      # rejects the request (HTTP 400).
+      model: openai/bge-m3
+      api_base: http://host.docker.internal:11434/v1
+      # Ollama ignores the key, but the OpenAI client needs a non-empty one.
+      api_key: unused
+    model_info:
+      mode: embedding
+    # bge-m3 returns 1024-dimensional vectors. A different embedding model
+    # changes that: set EMBED_DIMENSIONS to match and rebuild the vector tables.
+
+  # No rerank model: Ollama has no rerank API. Requests for any other alias,
+  # ao-rerank included, get HTTP 400 without leaving the gateway.
+
+litellm_settings:
+  # Drop request fields a provider does not support instead of failing.
+  drop_params: true
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
