@@ -244,6 +244,37 @@ versions. Report failures as failures.
 Reference result from the earlier direct-Ollama run: about 6 minutes, 8 terms, 47 column
 definitions, 8 joins.
 
+### Run 1 result (2026-11-11): passes except the as-configured answer
+
+Whole stack in Docker (`-p aofork`, fresh Postgres volume), chat `qwen3.5:9b` and
+embeddings `bge-m3` through the gateway, built from the tree that became `94a9af67`.
+Extra settings carried over from the earlier clone: `LLM_INVOKE_TIMEOUT_S=600`,
+`LLM_MAX_INFLIGHT=2`, `SEMANTIC_LLM_MAX_INFLIGHT=2`.
+
+- **Vector tables:** `vdb.data_objects_layer` (63 rows) and `vdb.semantic_layer`
+  (55 rows) are `halfvec(1024)` with an HNSW index, created by the backend itself from
+  `EMBED_DIMENSIONS=1024`. No pre-creation script.
+- **Ingest:** 6.0 s startup ingest + 168.0 s semantic compilation. 8 terms, 47 column
+  definitions, 8 joins: identical to the reference.
+- **Gateway only:** 75 chat and 121 embedding calls in the gateway log, all HTTP 200,
+  matching Ollama's own log one for one. No log line mentions an NVIDIA host. 0 errors,
+  0 tracebacks, 0 timeouts, 0 structured-output validation failures.
+- **Answer as configured: wrong 3 times out of 3** (593 s, 647 s, 182 s). Two used
+  `A15` (crimes in 1995), one averaged transaction amounts. Compiling from the schema
+  alone labelled `A11` "Total Revenue Or Sales Count", so no term meant salary. The
+  earlier direct-Ollama kit recorded the same limitation; it is not a gateway fault.
+- **Variation, labelled:** with the BIRD column dictionary loaded
+  (`load_bird_descriptions.py`, 54 columns) and a recompile (86.9 s, same counts), one
+  ask returned **Hl.m. Praha, 12,541** in 46.6 s. Configuration unchanged. Asked once
+  only, so its reliability is not established.
+- **Rerank was never called** (this dataset has no bridge tables), so run 1 says
+  nothing about the rerank fallback or A6.
+- **Follow-ups applied to the preset:** `env.ollama.example` now sets the timeout and
+  the two concurrency limits; the `num_ctx` comment in `ollama.yaml` no longer claims
+  the models fit in 8 GB (14% of the chat model ran on CPU, about 13 tokens/s).
+- **Consequence for the matrix:** the question only tests the model path fairly when
+  the column dictionary is loaded. Runs 2 and 3 should record both with and without it.
+
 ## Known upstream issues that affect testing
 
 Drafted bug reports, with code references, are in
