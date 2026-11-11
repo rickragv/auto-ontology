@@ -35,7 +35,7 @@ from auto_ontology.utils.llm_invoke import (
     get_llm_client,
     invoke_with_structured_output,
 )
-from auto_ontology.utils.rerank import get_rerank_kwargs, rerank_hits
+from auto_ontology.utils.rerank import RerankDisabled, get_rerank_kwargs, rerank_hits
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +129,12 @@ def _pick_owner_term_id(
 
     try:
         ranked = rerank_hits(query, hits, top_n=1, **get_rerank_kwargs())
+    except RerankDisabled:
+        logger.info(
+            "Rerank disabled — taking first target Term %r as bridge owner.",
+            terms[0].get("name"),
+        )
+        return terms[0]["id"]
     except Exception:
         logger.exception(
             "Rerank failed for bridge owner selection — falling back to first Term."

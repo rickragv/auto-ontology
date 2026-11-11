@@ -36,6 +36,14 @@ _RERANK_API_KEY = resolve("RERANK", "API_KEY")
 _TIMEOUT_S = 30.0
 
 
+class RerankDisabled(Exception):
+    """Rerank is switched off with ``RERANK_ENDPOINT=disabled``; nothing was sent.
+
+    Callers take the same fallback as for an endpoint error, without logging it
+    as one.
+    """
+
+
 def get_rerank_kwargs() -> dict[str, str]:
     """Keyword args for :func:`rerank_hits` (remote NeMo reranking endpoint)."""
     return {
@@ -108,9 +116,13 @@ def rerank_hits(
 
     A hit that already carries ``_rerank_score`` keeps it. Ties keep their
     input order. Raises on an endpoint error; the caller picks the fallback.
+    Raises :class:`RerankDisabled`, without a request, when *rerank_invoke_url*
+    is ``disabled`` (any case, surrounding whitespace ignored).
     """
     if not hits:
         return hits
+    if rerank_invoke_url.strip().lower() == "disabled":
+        raise RerankDisabled
     scores = _scores(
         query,
         [str(hit.get(text_key) or "") for hit in hits],
