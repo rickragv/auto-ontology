@@ -241,6 +241,13 @@ each marked UNTESTED. Models: `gemini-3.5-flash-lite` (chat), `gemini-embedding-
   `invoke_with_structured_output` parsed the stand-in's reply.
 - The Ollama chat alias in `mixed.yaml` answered one request (HTTP 200, 2 tokens).
 
+**Update 2026-11-12: A4 implemented.** `EMBED_EXTRA_PARAMS=nvidia|none` (default `nvidia`;
++18/-1 in `auto_ontology/utils/embedding.py`). `none` sends a plain OpenAI body: `model`,
+`input`, `encoding_format`. Tests: `auto_ontology/utils/tests/test_embedding_extra_params.py`,
+29 tests, passing. Against a local stand-in for Google through LiteLLM 1.108.5, with `none`
+no `taskType` is sent unless the gateway config sets one. Not exercised against real
+Gemini; the presets still use `gemini-embedding-001` with a fixed `task_type`.
+
 ## Gateway findings (step 3, recorded 2026-11-11)
 
 Gateway alone, LiteLLM 1.108.5, Ollama 0.40.6, RTX 3070 Laptop 8 GB. Full stack not
