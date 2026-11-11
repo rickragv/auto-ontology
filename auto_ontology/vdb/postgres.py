@@ -180,6 +180,9 @@ class PostgresVDB:
         # 2. The implemtation should support be fault tolerant and support incremental ingestion, which is challenging.
         self.database_name = kwargs.get("database_name")
         if self.database_name and reset:
+            # A reset makes way for a write, so check the vector size first: a
+            # mismatch then fails here, before the previous rows are deleted.
+            self._get_store()
             ids = self.delete_by_database(self.database_name)
             logger.info(
                 "PostgresVDB.delete_by_database: deleted %d rows for database %s",
@@ -247,11 +250,15 @@ class PostgresVDB:
                 )
             conn.commit()
 
-    def _get_store(self) -> Optional[PGVectorStore]:
+    def _get_store(self, *, check_size: bool = True) -> Optional[PGVectorStore]:
         """Return the vector store, creating the table on first write.
 
         If the table doesn't exist and ``vector_size`` is not provided (e.g.
         on read paths), returns ``None`` so callers can short-circuit.
+
+        ``check_size=False`` skips the vector size guard, for deletes, which
+        never read or write a vector. A store opened that way is not kept, so
+        the next write or search on this instance still runs the guard.
         """
         if self._store is not None:
             return self._store
@@ -274,19 +281,21 @@ class PostgresVDB:
                 ],
             )
             self._create_vector_index()
-        else:
+        elif check_size:
             check_vector_size(
                 self.schema_name, self.collection_name, existing_size, self.vector_size
             )
 
-        self._store = PGVectorStore.create_sync(
+        store = PGVectorStore.create_sync(
             engine=engine,
             embedding_service=self.embeddings,
             table_name=self.collection_name,
             schema_name=self.schema_name,
             metadata_columns=[_DATABASE_METADATA_COLUMN, _LABEL_METADATA_COLUMN],
         )
-        return self._store
+        if check_size:
+            self._store = store
+        return store
 
     def _create_vector_index(self) -> None:
         """Convert the embedding column to ``halfvec`` and index it with HNSW.
@@ -416,7 +425,7 @@ class PostgresVDB:
         Returns the list of deleted row IDs (empty if the table doesn't exist
         or no rows match).
         """
-        store = self._get_store()
+        store = self._get_store(check_size=False)
         if store is None:
             logger.info(
                 "PostgresVDB.delete_by_database: collection %s not found, "
