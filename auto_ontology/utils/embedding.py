@@ -23,6 +23,7 @@ from __future__ import annotations
 import itertools
 import logging
 import math
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -85,6 +86,20 @@ _ERROR_ATTR = "embed_error"
 _FATAL_ATTR = "embed_error_fatal"
 
 
+def _env_positive_int(name: str, default: int) -> int:
+    """The whole number in env var *name*, or *default* when it is unset or blank."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(f"{name} must be a whole number, got {raw!r}.") from None
+    if value < 1:
+        raise ValueError(f"{name} must be at least 1, got {raw!r}.")
+    return value
+
+
 @dataclass(frozen=True)
 class EmbedParams:
     """Where and how to embed. The key is kept out of ``repr`` and so out of logs."""
@@ -93,8 +108,15 @@ class EmbedParams:
     embed_invoke_url: str
     api_key: str = field(default="", repr=False)
     embed_modality: str = "text"
-    inference_batch_size: int = 32
-    nim_http_max_concurrent: int = 32
+    # Texts per request and requests in flight. Read from the environment each
+    # time params are built, so a small-quota provider can lower both; an
+    # explicit argument still wins.
+    inference_batch_size: int = field(
+        default_factory=lambda: _env_positive_int("EMBED_BATCH_SIZE", 32)
+    )
+    nim_http_max_concurrent: int = field(
+        default_factory=lambda: _env_positive_int("EMBED_MAX_CONCURRENT", 32)
+    )
     request_timeout_s: float = 600.0
 
 
