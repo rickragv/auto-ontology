@@ -462,3 +462,7 @@ Settle each by measurement, then record the answer here.
   errors); the licensing test skips outside a git checkout. The database tests have
   still not been run to completion against a real Postgres, apart from
   `auto_ontology/vdb` (56 passed) and `dal/tests/test_reset.py` (14 passed).
+  A third attempt, from the clean export against a disposable migrated Postgres with no
+  `.env`, hung at the same place (about 28 tests in, the connection idle after
+  `DELETE FROM catalog_database`), so the hang is not caused by `.env`. It was not
+  diagnosed. Whether it also happens on upstream `fc43a826` is unknown.
