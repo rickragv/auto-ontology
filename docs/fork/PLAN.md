@@ -189,6 +189,25 @@ A3, A2 and A1 are implemented with tests. Nothing is committed yet.
   Markdown, env examples) need that line before they are committed. The three new
   Python files have it.
 
+## Progress (step 4, recorded 2026-11-11)
+
+A5 and A6 are implemented with tests. A4 needs no backend change for Ollama and waits
+on the Gemini measurement.
+
+- A5: `EMBED_BATCH_SIZE` and `EMBED_MAX_CONCURRENT` in `auto_ontology/utils/embedding.py`
+  (+24/-2), read each time `EmbedParams` is built, defaults 32 and 32. No production
+  caller passes either value, so the settings reach every call site. 19 tests in
+  `utils/tests/test_embedding_throughput.py`. The limit is per `embed_texts` call, not
+  per process: parallel ingests each get their own pool.
+- A6: `RERANK_ENDPOINT=disabled` makes `rerank_hits` raise `RerankDisabled` before any
+  request; `_pick_owner_term_id` takes the first candidate Term, as on an endpoint
+  error, and logs one INFO line. 14 tests in `utils/tests/test_rerank_disabled.py` and
+  `semantic/tests/test_bridge_rerank_disabled.py`. The Ollama preset now uses it.
+- `uv run pytest auto_ontology/utils auto_ontology/semantic auto_ontology/vdb -q` with
+  no database: 387 passed, 9 skipped, 1 error (the baseline `test_records.py` error).
+  Ruff check and format check clean. Not exercised live: no run has rebuilt the image
+  with A5/A6, and the test dataset has no bridge tables.
+
 ## Gateway findings (step 3, recorded 2026-11-11)
 
 Gateway alone, LiteLLM 1.108.5, Ollama 0.40.6, RTX 3070 Laptop 8 GB. Full stack not
