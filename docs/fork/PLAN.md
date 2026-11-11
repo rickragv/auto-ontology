@@ -216,6 +216,31 @@ on the Gemini measurement.
   commented settings in `.env.example`. Gemini and mixed presets (step 5) are still
   blocked on a Gemini API key; the docs list them as planned and untested.
 
+## Step 5 (drafts only, recorded 2026-11-12)
+
+No Gemini API key, so nothing below was sent to Gemini. Draft files:
+`deploy/litellm/gemini.yaml`, `mixed.yaml`, `env.gemini.example`, `env.mixed.example`,
+each marked UNTESTED. Models: `gemini-3.5-flash-lite` (chat), `gemini-embedding-001` at
+1536 dimensions (embeddings). Offline checks with LiteLLM 1.108.5:
+
+- Both configs load. With `GEMINI_API_KEY` empty, chat and embeddings answer HTTP 500
+  "Missing Gemini API key" in 5 to 6 s, raised before any request is built (checked
+  with the gateway on `--network none`). The backend treats 500 as transient and
+  retries, so a missing key surfaces slowly.
+- **A4 on Gemini, read from the body LiteLLM sent to a local stand-in for Google:** the
+  native `gemini/` embedding route turns the backend's `input_type` into `taskType`
+  with the raw value (`passage`, `query`), which is not a Gemini task type.
+  `drop_params` and `additional_drop_params` do not remove it. `truncate`, `modality`
+  and `encoding_format` are removed. A `task_type` set in `litellm_params` replaces the
+  mapped value, so the presets fix it to `SEMANTIC_SIMILARITY`. `gemini-embedding-2`
+  takes no task type, so it needs the A4 backend switch first.
+- Chat body for `gemini-3.5-flash-lite`: no temperature; `max_output_tokens: 8192`;
+  `response_json_schema` with `$defs`, `$ref` and `additionalProperties: false` kept;
+  `reasoning_effort: none` becomes `thinkingLevel: minimal`; every system message,
+  including one after a user turn, moves into `system_instruction`. The repo's own
+  `invoke_with_structured_output` parsed the stand-in's reply.
+- The Ollama chat alias in `mixed.yaml` answered one request (HTTP 200, 2 tokens).
+
 ## Gateway findings (step 3, recorded 2026-11-11)
 
 Gateway alone, LiteLLM 1.108.5, Ollama 0.40.6, RTX 3070 Laptop 8 GB. Full stack not
@@ -292,8 +317,11 @@ Extra settings carried over from the earlier clone: `LLM_INVOKE_TIMEOUT_S=600`,
   earlier direct-Ollama kit recorded the same limitation; it is not a gateway fault.
 - **Variation, labelled:** with the BIRD column dictionary loaded
   (`load_bird_descriptions.py`, 54 columns) and a recompile (86.9 s, same counts), one
-  ask returned **Hl.m. Praha, 12,541** in 46.6 s. Configuration unchanged. Asked once
-  only, so its reliability is not established.
+  ask returned **Hl.m. Praha, 12,541** in 46.6 s. Configuration unchanged.
+- **Reliability with the dictionary (2026-11-11):** six more asks, 6 of 6 correct, 43 to
+  146 s (median about 59 s), no timeouts, 40 chat calls all HTTP 200, two asks with one
+  SQL repair round each. Judged on the returned rows; the answer text never states the
+  district or the number.
 - **Rerank was never called** (this dataset has no bridge tables), so run 1 says
   nothing about the rerank fallback or A6.
 - **Follow-ups applied to the preset:** `env.ollama.example` now sets the timeout and
@@ -342,8 +370,29 @@ Settle each by measurement, then record the answer here.
    traceback, which A6 would remove. No working rerank provider has been tested.
 3. Does Gemini's embedding model accept a `dimensions` value through the gateway, and
    which value gives a table pgvector can index?
+   **From documentation, not measured (2026-11-12):** `dimensions` in `litellm_params`
+   reaches Gemini as `outputDimensionality` (seen in the request body against a local
+   stand-in; the backend sends no `dimensions` itself). `gemini-embedding-001` returns
+   3072 by default, accepts 128 to 3072 and Google recommends 768, 1536 or 3072; its
+   MTEB table gives 68.17 at 1536 and 67.99 at 768. All three fit the 4000 `halfvec`
+   limit; 768 and 1536 also fit 2000. Google does not normalise this model's vectors
+   below 3072, and the backend does not either; the index uses cosine distance, so
+   length does not matter. Presets use 1536. Whether Gemini returns 1536 values is
+   unmeasured.
 4. Does `nim_http_max_concurrent=32` trip Gemini rate limits at the reference dataset
    size?
+   **From documentation, not measured (2026-11-12):** Google publishes per-project
+   limits only in AI Studio. Third-party figures (scriptbyai.com, 2026-11-05): free
+   tier embeddings 100 requests and 30,000 input tokens a minute;
+   `gemini-3.5-flash-lite` 10 requests a minute and 500 a day. Google does not say
+   whether a batch of N texts counts as 1 request or N. At the defaults one chunk is up
+   to 1,024 texts sent at once. Run 1 wrote 63 and 55 rows and made 121 embedding calls
+   in all, so whether the reference dataset trips the free tier depends on that
+   counting rule and on text length, neither known. The presets use
+   `EMBED_BATCH_SIZE=10` and `EMBED_MAX_CONCURRENT=1`, so any one request fits a
+   minute's quota even if each text counts and hits the 2,048-token input limit. Chat is
+   likely the tighter limit: at 10 a minute even one call in flight can exceed it, and
+   the backend retries a chat 429 for only about 6 s.
 5. Current stable LiteLLM image version to pin. Look it up; do not guess.
    **Answered 2026-11-11:** pin `ghcr.io/berriai/litellm:v1.108.5` (tag confirmed with
    `docker manifest inspect`). LiteLLM no longer publishes `-stable` tags; releases are
@@ -353,12 +402,27 @@ Settle each by measurement, then record the answer here.
    Gemini Flash models reject `temperature`/`top_p`/`top_k` unless `drop_params: true`.
 
 6. (Raised by A1, 2026-11-11.) Does a re-ingest regenerate the embeddings for custom
-   analyses, SQL attributes and PQL analyses? They are embedded into `semantic_layer`
-   when saved, so dropping the vector tables to change dimension may remove them from
-   search until re-saved. Check before the docs give drop-and-re-ingest as the recovery.
+   analyses, SQL attributes and PQL analyses?
+   **Answered 2026-11-12: no, and it is wider than that.** A re-ingest re-embeds tables
+   and columns only. Existing Terms, column attributes, SQL attributes, custom analyses
+   and PQL analyses are embedded when saved or first compiled; compilation only works on
+   tables with no Term yet, and nothing re-embeds the rest (`embed_all_semantic_nodes`
+   has no callers). Recovery is to re-save each item or reset the semantic layer, which
+   deletes user-written content. From code reading plus one probe of the compilation
+   work list; no end-to-end drop and rebuild was run. The procedure is in
+   `docs/model-providers.md` and the mismatch error message now points to it. Also
+   found: while a mismatch exists, compilation swallows the size error and stores Terms
+   and SQL attributes without vectors.
 7. (Raised by A1.) With a dimension mismatch, deleting one datasource fails in
-   `delete_by_database` after the catalog transaction has committed. Decide whether the
-   guard should apply to writes and searches only.
+   `delete_by_database` after the catalog transaction has committed.
+   **Fixed 2026-11-12 (`99406a20`).** Confirmed: the user got HTTP 200, the catalog rows
+   were deleted and the vectors were left behind; before the guard the delete succeeded.
+   Deletes now skip the guard; writes, searches and the reset at ingest start still
+   raise, and the reset checks before deleting previous rows. 12 tests; the whole
+   `auto_ontology/vdb` directory passed 56/56 against a throwaway pgvector.
+8. (Raised while answering 6, not verified.) Scheduled re-ingests build data-layer rows
+   from freshly parsed source tables; these may not carry curated descriptions or
+   existing catalog ids. If so it affects every re-ingest, not only recovery.
 
 ## Local environment notes
 
