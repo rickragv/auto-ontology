@@ -208,6 +208,14 @@ on the Gemini measurement.
   Ruff check and format check clean. Not exercised live: no run has rebuilt the image
   with A5/A6, and the test dataset has no bridge tables.
 
+- Live check after rebuilding the backend image from `65bbc2f5`: all five containers
+  healthy; inside the backend, rerank resolves to `disabled` and raises `RerankDisabled`
+  with no request; with `EMBED_BATCH_SIZE=5` and `EMBED_MAX_CONCURRENT=2`, 23 texts made
+  exactly 5 gateway embedding requests and returned 23 vectors of 1024 dimensions.
+- Step 6 (docs) done for what exists: `docs/model-providers.md`, a README section and
+  commented settings in `.env.example`. Gemini and mixed presets (step 5) are still
+  blocked on a Gemini API key; the docs list them as planned and untested.
+
 ## Gateway findings (step 3, recorded 2026-11-11)
 
 Gateway alone, LiteLLM 1.108.5, Ollama 0.40.6, RTX 3070 Laptop 8 GB. Full stack not
