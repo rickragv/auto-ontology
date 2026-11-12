@@ -345,6 +345,31 @@ Extra settings carried over from the earlier clone: `LLM_INVOKE_TIMEOUT_S=600`,
 - **Consequence for the matrix:** the question only tests the model path fairly when
   the column dictionary is loaded. Runs 2 and 3 should record both with and without it.
 
+### Runs 2 and 3 result (2026-11-13): pass, sanity level only
+
+The user asked for Gemini to be used for light checks only (paid key), chat on
+`gemini-3.8-flash`, embeddings at 768 dimensions. Each run: fresh database in a separate
+Compose project (`-p aogem`), image built from `c80949b7`, one ingest, one compile.
+Presets changed to 768 before the runs.
+
+| | Run 2 (Gemini + Gemini) | Run 3 (Ollama chat + Gemini embeddings) |
+|---|---|---|
+| Vector tables | `halfvec(768)`, HNSW, 63 / 55 rows | same |
+| Ingest | 21.2 s | 19.2 s |
+| Compile | 147.8 s; 8 terms, 47 column definitions, 8 joins | 165.7 s; 8 / 47 / 8 |
+| Question, no descriptions | correct, 36.8 s (1 ask) | wrong, empty result, 304.5 s (1 ask) |
+| Question, BIRD descriptions | not run | correct, 90.3 s (1 ask) after a 99.9 s recompile (9 / 47 / 8) |
+| Gateway calls | 31 chat, 23 embedding, all 200 | 59 chat, 122 embedding, all 200 |
+
+- No rate-limit response, no NVIDIA host in any log. Run 3 logged one SQLAlchemy/asyncpg
+  error while closing a pooled connection; the compile succeeded; not investigated.
+- Not done, by the user's instruction: repeat asks, other models or sizes, rate-limit
+  measurement. `EMBED_EXTRA_PARAMS=none` and `gemini-embedding-2` were not run in the
+  stack (direct call only: both embedding models return the size asked for).
+- The Ollama stack (`-p aofork`) was stopped for the runs and restarted after; its
+  `.env` is kept as `.env.ollama.local`, the Gemini one as `.env.gemini.local` (both
+  git-excluded).
+
 ## Known upstream issues that affect testing
 
 Drafted bug reports, with code references, are in
@@ -375,7 +400,10 @@ Settle each by measurement, then record the answer here.
    repo's own `_build_client(client_kind="openai")` and
    `invoke_with_structured_output`: 15/15 responses schema-valid, 2–15 s each. Field
    *content* was right in only 2–3 of 5 runs per probe; the direct-Ollama path scored
-   the same, so that is model quality, not the gateway. Gemini part still open.
+   the same, so that is model quality, not the gateway.
+   **Gemini part answered 2026-11-13: yes, at sanity level.** Run 2 compiled and
+   answered with `gemini-3.8-flash` through the gateway: 31 chat calls, all HTTP 200,
+   no validation failure in the backend log.
 2. Which rerank providers work through the gateway's `/rerank` route, and is rerank
    worth enabling in the local preset at all?
    **Partly answered 2026-11-11:** not enabled in the Ollama preset (Ollama has no
@@ -392,8 +420,10 @@ Settle each by measurement, then record the answer here.
    MTEB table gives 68.17 at 1536 and 67.99 at 768. All three fit the 4000 `halfvec`
    limit; 768 and 1536 also fit 2000. Google does not normalise this model's vectors
    below 3072, and the backend does not either; the index uses cosine distance, so
-   length does not matter. Presets use 1536. Whether Gemini returns 1536 values is
-   unmeasured.
+   length does not matter.
+   **Measured 2026-11-13:** yes. Presets now use 768 (the user's choice); runs 2 and 3
+   stored 768-value vectors in `halfvec(768)` tables. Asked directly for 1536, both
+   `gemini-embedding-001` and `gemini-embedding-2` returned 1536 values.
 4. Does `nim_http_max_concurrent=32` trip Gemini rate limits at the reference dataset
    size?
    **From documentation, not measured (2026-11-12):** Google publishes per-project
@@ -408,6 +438,8 @@ Settle each by measurement, then record the answer here.
    minute's quota even if each text counts and hits the 2,048-token input limit. Chat is
    likely the tighter limit: at 10 a minute even one call in flight can exceed it, and
    the backend retries a chat 429 for only about 6 s.
+   **Not measured, by decision (2026-11-13):** the key is paid and for light checks
+   only. Runs 2 and 3 at the preset's lowered limits saw no 429.
 5. Current stable LiteLLM image version to pin. Look it up; do not guess.
    **Answered 2026-11-11:** pin `ghcr.io/berriai/litellm:v1.108.5` (tag confirmed with
    `docker manifest inspect`). LiteLLM no longer publishes `-stable` tags; releases are
