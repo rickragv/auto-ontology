@@ -39,6 +39,7 @@ from auto_ontology.utils.llm_invoke import (
     get_llm_client,
     invoke_with_structured_output,
 )
+from auto_ontology.vdb.dimensions import VectorSizeMismatchError
 
 logger = logging.getLogger(__name__)
 
@@ -733,6 +734,10 @@ def suggest_sql_attributes(database_name: str) -> int:
                     exc,
                 )
                 continue
+            except VectorSizeMismatchError:
+                # Every later write would fail the same way: stop, do not store
+                # more SqlAttributes without vectors.
+                raise
             except Exception as exc:
                 logger.warning(
                     "Term %r: unexpected error creating SqlAttribute %r — skipping: %s",
@@ -752,6 +757,8 @@ def suggest_sql_attributes(database_name: str) -> int:
         for future in as_completed(futures):
             try:
                 new_attr_ids.extend(future.result())
+            except VectorSizeMismatchError:
+                raise
             except Exception:
                 row = futures[future]
                 logger.exception("Error processing term %r", row.get("term_name"))

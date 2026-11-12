@@ -36,6 +36,7 @@ from auto_ontology.utils.llm_invoke import (
     invoke_with_structured_output,
 )
 from auto_ontology.utils.rerank import RerankDisabled, get_rerank_kwargs, rerank_hits
+from auto_ontology.vdb.dimensions import VectorSizeMismatchError
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +298,10 @@ def build_bridge_tables_sql_attributes(database_name: str) -> int:
                 exc,
             )
             continue
+        except VectorSizeMismatchError:
+            # Every later write would fail the same way: stop, do not store
+            # more SqlAttributes without vectors.
+            raise
         except Exception:
             logger.exception(
                 "Bridge table %r: unexpected error creating SqlAttribute %r",
