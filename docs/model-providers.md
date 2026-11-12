@@ -283,7 +283,7 @@ of 7 on this one question; other questions were not measured.
   configs load in the gateway; with no key, Gemini requests fail inside the gateway with
   HTTP 500 and nothing is sent; the request bodies LiteLLM builds were read from a local
   stand-in for Google; the Ollama chat model answered through `mixed.yaml`. Unverified:
-  - That Gemini accepts the model names `gemini-3.5-flash-lite` and
+  - That Gemini accepts the model names `gemini-3.8-flash` and
     `gemini-embedding-001` with a real key.
   - That Gemini accepts the embedding request (`taskType: SEMANTIC_SIMILARITY`,
     `outputDimensionality: 1536`) and returns 1536 values per text.

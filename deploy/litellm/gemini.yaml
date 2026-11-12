@@ -21,14 +21,14 @@ model_list:
     litellm_params:
       # The gemini/ prefix is Google AI Studio with an API key. Without it
       # LiteLLM routes to Vertex AI, which needs Google Cloud credentials.
-      model: gemini/gemini-3.5-flash-lite
+      model: gemini/gemini-3.8-flash
       api_key: os.environ/GEMINI_API_KEY
       # No temperature. LiteLLM's Gemini docs say to leave it unset on Gemini 3,
       # and from LiteLLM 1.109 this model answers 400 to temperature, top_p
       # and top_k unless drop_params is on. The backend sends none.
-      # Thinking cannot be switched off on Gemini 3. This model's default level
-      # is minimal; reasoning_effort "none" maps to minimal too. Thinking tokens
-      # count against the backend's max_tokens (8192).
+      # Thinking cannot be switched off on Gemini 3; reasoning_effort "none"
+      # maps to the minimal level. This model's default level has not been
+      # checked. Thinking tokens count against the backend's max_tokens (8192).
 
   - model_name: ao-embed
     litellm_params:
