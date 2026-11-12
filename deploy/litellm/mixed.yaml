@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-# UNTESTED: written from provider documentation on 2026-11-11 without a Gemini
-# API key. No request has been sent to Gemini with this preset.
+# Sanity-tested once on 2026-11-13 (one ingest, one compile, two questions) on a paid
+# Gemini key. Not load-tested; the free-tier notes below are from documentation.
 #
 # LiteLLM gateway preset: chat on the host's Ollama, embeddings on Gemini
 # (Google AI Studio). Used by docker-compose.litellm.yml when
@@ -46,7 +46,7 @@ model_list:
       # Replaces the invalid taskType LiteLLM would build from input_type.
       task_type: SEMANTIC_SIMILARITY
       # Sent as outputDimensionality (default 3072). EMBED_DIMENSIONS must match.
-      dimensions: 1536
+      dimensions: 768
     model_info:
       mode: embedding
     # Not normalised by Google below 3072 dimensions, nor by the backend; the

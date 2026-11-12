@@ -425,7 +425,8 @@ variable.
 #### Other model providers (fork)
 
 This fork can run on other providers through an optional LiteLLM gateway. An
-Ollama preset is included and tested; others are planned. Setup, the new
+Ollama preset is included and tested; Gemini and mixed presets have had one
+sanity run each. Setup, the new
 settings, and what was and was not tested are in
 [docs/model-providers.md](./docs/model-providers.md).
 

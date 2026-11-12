@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
-# UNTESTED: written from provider documentation on 2026-11-11 without a Gemini
-# API key. No request has been sent to Gemini with this preset.
+# Sanity-tested once on 2026-11-13 (one ingest, one compile, one question) on a paid
+# Gemini key. Not load-tested; the free-tier notes below are from documentation.
 #
 # LiteLLM gateway preset: chat and embeddings on Gemini (Google AI Studio).
 # Used by docker-compose.litellm.yml when LITELLM_PRESET=gemini.
@@ -27,8 +27,9 @@ model_list:
       # and from LiteLLM 1.109 this model answers 400 to temperature, top_p
       # and top_k unless drop_params is on. The backend sends none.
       # Thinking cannot be switched off on Gemini 3; reasoning_effort "none"
-      # maps to the minimal level. This model's default level has not been
-      # checked. Thinking tokens count against the backend's max_tokens (8192).
+      # maps to the minimal level. Left at its default the model thinks: a
+      # one-word answer used about 90 to 120 thinking tokens. Thinking tokens
+      # count against the backend's max_tokens (8192).
 
   - model_name: ao-embed
     litellm_params:
@@ -37,8 +38,8 @@ model_list:
       # gemini-embedding-2 accepts no taskType; neither drop_params nor
       # additional_drop_params removes it. The backend can now omit the field
       # with EMBED_EXTRA_PARAMS=none. This preset keeps gemini-embedding-001 with
-      # a fixed task_type because that needs no extra backend setting. Neither
-      # combination has been tested against Gemini.
+      # a fixed task_type because that needs no extra backend setting. Only this
+      # combination has been run against Gemini.
       model: gemini/gemini-embedding-001
       api_key: os.environ/GEMINI_API_KEY
       # Replaces the taskType LiteLLM would build from the backend's
@@ -47,10 +48,10 @@ model_list:
       # comparable; Gemini's own query/document pair is not used here.
       task_type: SEMANTIC_SIMILARITY
       # Sent to Gemini as outputDimensionality. The model returns 3072 by
-      # default; 1536 is one of Google's recommended sizes, scores the same in
-      # Google's own table and halves the vector tables. EMBED_DIMENSIONS must
+      # default; 768 is one of Google's recommended sizes, scores within a point
+      # of it in Google's own table and makes the vector tables a quarter the size. EMBED_DIMENSIONS must
       # match. Remove this line and set EMBED_DIMENSIONS=3072 for full size.
-      dimensions: 1536
+      dimensions: 768
     model_info:
       mode: embedding
     # LiteLLM leaves the backend's truncate and modality out of the Gemini

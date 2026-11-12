@@ -13,7 +13,8 @@ LiteLLM.
 This is a fork feature, not part of upstream NVIDIA/auto-ontology. Every new setting is
 optional. With none of them set, behaviour is the same as upstream.
 
-Only the Ollama preset is tested. Gemini and mixed presets exist as untested drafts. See
+The Ollama preset is tested. The Gemini and mixed presets have had one sanity run each
+and no load testing. See
 [What was tested](#what-was-tested) and [What was not tested](#what-was-not-tested)
 before you rely on anything here.
 
@@ -259,6 +260,37 @@ throwaway `pgvector/pgvector:pg17` and passed. Ruff check and format check were 
   was judged on the returned rows: the answer text describes the query and does not
   state the district or the number.
 
+**Run 2: Gemini chat and embeddings through the gateway (2026-11-13, sanity run).**
+One ingest, one compile and one question on a paid Gemini key, fresh database, chat
+`gemini-3.8-flash`, embeddings `gemini-embedding-001` at 768 dimensions, preset as
+written (one chat call and one embedding request at a time, 10 texts per request).
+
+- The backend created both vector tables as `halfvec(768)` with an HNSW index
+  (63 and 55 rows).
+- Ingest took 21.2 s and semantic compilation 147.8 s. Result: 8 terms, 47 column
+  definitions, 8 joins, the same counts as run 1.
+- The test question was answered correctly on the first ask, without column
+  descriptions: Hl.m. Praha, 12,541, in 36.8 s.
+- The gateway log showed 31 chat and 23 embedding calls, all HTTP 200. No rate-limit
+  response, no traceback, no log line naming an NVIDIA host.
+- So with a real key Gemini accepted the model names, the embedding request
+  (`taskType: SEMANTIC_SIMILARITY`, `outputDimensionality: 768`) and the backend's
+  structured-output schemas, and every reply the backend needed validated.
+
+**Run 3: Ollama chat, Gemini embeddings (2026-11-13, sanity run).** Fresh database,
+chat `qwen3.5:9b` on Ollama 0.40.6, embeddings as in run 2.
+
+- Vector tables `halfvec(768)`, 63 and 55 rows. Ingest 19.2 s, compilation 165.7 s:
+  8 terms, 47 column definitions, 8 joins.
+- Without column descriptions the question was answered wrongly once (an empty result
+  after 304.5 s), as in run 1. With the BIRD column descriptions loaded and a recompile
+  (99.9 s; 9 terms, 47 column definitions, 8 joins) one ask returned Hl.m. Praha,
+  12,541 in 90.3 s.
+- 59 chat and 122 embedding calls in all, every one HTTP 200.
+- One error was logged once during compilation, when SQLAlchemy closed a pooled
+  database connection (`AttributeError` inside asyncpg). The compile finished
+  successfully. It was not investigated.
+
 **`EMBED_EXTRA_PARAMS`.** Checked with unit tests and against a local stand-in for
 Google's API through LiteLLM 1.108.5: with `none`, no `taskType` is sent unless the
 gateway config sets one. It was not sent to real Gemini.
@@ -276,28 +308,19 @@ of 7 on this one question; other questions were not measured.
 
 ## What was not tested
 
-- Gemini and mixed (Ollama chat, Gemini embeddings) presets. Draft files exist:
-  `deploy/litellm/gemini.yaml`, `mixed.yaml`, `env.gemini.example` and
-  `env.mixed.example`. They were written from provider documentation without a Gemini
-  API key, and no request has been sent to Gemini with them. Checked offline only: both
-  configs load in the gateway; with no key, Gemini requests fail inside the gateway with
-  HTTP 500 and nothing is sent; the request bodies LiteLLM builds were read from a local
-  stand-in for Google; the Ollama chat model answered through `mixed.yaml`. Unverified:
-  - That Gemini accepts the model names `gemini-3.8-flash` and
-    `gemini-embedding-001` with a real key.
-  - That Gemini accepts the embedding request (`taskType: SEMANTIC_SIMILARITY`,
-    `outputDimensionality: 1536`) and returns 1536 values per text.
-  - That Gemini accepts the backend's structured-output schemas, sent as
-    `response_json_schema` with `$defs`, `$ref` and `additionalProperties: false`, and
-    that the answers validate.
+- Gemini beyond one sanity run per preset. Runs 2 and 3 used one small database and one
+  question on a paid key. Unverified:
+  - Any Gemini chat model other than `gemini-3.8-flash`, and `gemini-embedding-2`
+    (which needs `EMBED_EXTRA_PARAMS=none`).
+  - Embedding sizes other than 768.
+  - Repeatability: each Gemini result is a single ask.
   - Retrieval quality with one task type for both stored rows and search strings.
   - Free-tier rate limits. The figures in the env files are third-party; Google shows
     limits only in AI Studio. Whether the lowered concurrency settings avoid failed
-    steps is not known.
+    steps on the free tier is not known; the paid-tier runs saw no rate-limit response.
   - What Gemini does with an embedding input over 2,048 tokens. LiteLLM drops the
     backend's `truncate` field.
-  - Runs 2 and 3 of the plan's live matrix (full ingest and the test question).
-- Any hosted provider.
+- Any hosted provider other than Gemini.
 - A working rerank model through the gateway. Without a rerank model the gateway answers
   `/rerank` with HTTP 400 and the backend falls back to the first candidate.
 - `EMBED_BATCH_SIZE`, `EMBED_MAX_CONCURRENT` and `RERANK_ENDPOINT=disabled` in a full
