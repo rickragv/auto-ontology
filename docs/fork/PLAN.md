@@ -248,6 +248,14 @@ each marked UNTESTED. Models: `gemini-3.5-flash-lite` (chat), `gemini-embedding-
 no `taskType` is sent unless the gateway config sets one. Not exercised against real
 Gemini; the presets still use `gemini-embedding-001` with a fixed `task_type`.
 
+**Update 2026-11-13: chat model changed to `gemini-3.8-flash`** at the user's request
+(Gemini 3.x flash only). Still untested: three keys were tried directly against
+Google and none could run a model (HTTP 401 invalid key; HTTP 402 credits depleted;
+HTTP 403 Gemini API not enabled in the project). The second key's model list does
+include `gemini-3.8-flash`, `gemini-embedding-001` and `gemini-embedding-2`. The
+request-body findings above were read for `gemini-3.5-flash-lite`; its default
+thinking level and rate limits may not apply to `gemini-3.8-flash`.
+
 ## Gateway findings (step 3, recorded 2026-11-11)
 
 Gateway alone, LiteLLM 1.108.5, Ollama 0.40.6, RTX 3070 Laptop 8 GB. Full stack not
@@ -430,6 +438,18 @@ Settle each by measurement, then record the answer here.
 8. (Raised while answering 6, not verified.) Scheduled re-ingests build data-layer rows
    from freshly parsed source tables; these may not carry curated descriptions or
    existing catalog ids. If so it affects every re-ingest, not only recovery.
+   **Answered 2026-11-13 from code reading, nothing run: partly real, and upstream
+   behaviour.** Catalog ids are stable (`get_table_ids` / `get_column_ids` merge stored
+   ids by natural key) and stored descriptions survive (`description` is left out of
+   the fields a re-ingest overwrites), so Terms, column attributes and joins are not
+   orphaned. The vector half is real: `run_ingest` builds the data-layer embedding text
+   from the freshly parsed frames, where only the Databricks connector fills a
+   description, then resets that database's rows in `vdb.data_objects_layer`. A
+   description edited in the UI is embedded at edit time
+   (`update_node_properties`) and replaced by source-only text at the next ingest. No
+   test pins either half. The code involved is unchanged from `fc43a826`. Not fixed:
+   it would mean building the re-ingest frames from the catalog, a change to upstream
+   ingest code outside this branch's goal.
 
 ## Local environment notes
 
