@@ -428,6 +428,17 @@ Settle each by measurement, then record the answer here.
    `docs/model-providers.md` and the mismatch error message now points to it. Also
    found: while a mismatch exists, compilation swallows the size error and stores Terms
    and SQL attributes without vectors.
+   **Corrected and fixed 2026-11-13.** The Term stage never hid this error: the
+   pipeline calls `create_index()` before the table loop, outside any handler, so a
+   compile fails there first. The error was hidden in the SQL-attribute stages
+   (`sql_attribute_suggester.py`, `bridge_tables.py`, reached when no embedder is built
+   up front) and on two save paths (Term edit, column sample-values edit), which
+   answered 200. All four now let `VectorSizeMismatchError` through; the two saves
+   answer 422 with the message. Other exceptions are handled as before. 12 tests, no
+   database; not run against a live stack. The catalog write still commits before the
+   failing vector write, so the row in flight is left without a vector. A model whose
+   output size differs from the table raises pgvector's own error, which is still
+   swallowed.
 7. (Raised by A1.) With a dimension mismatch, deleting one datasource fails in
    `delete_by_database` after the catalog transaction has committed.
    **Fixed 2026-11-12 (`99406a20`).** Confirmed: the user got HTTP 200, the catalog rows
