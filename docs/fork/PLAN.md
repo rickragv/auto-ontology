@@ -497,3 +497,29 @@ Settle each by measurement, then record the answer here.
   `.env`, hung at the same place (about 28 tests in, the connection idle after
   `DELETE FROM catalog_database`), so the hang is not caused by `.env`. It was not
   diagnosed. Whether it also happens on upstream `fc43a826` is unknown.
+- **Diagnosed 2026-11-13: not a hang, and not the fork.** With `POSTGRES_HOST=localhost`
+  and a Postgres published on `127.0.0.1` only, every new psycopg connection on this
+  Windows machine waits up to 130 s: `localhost` resolves to `::1` first, the refusal
+  there takes 2 s at socket level and psycopg 3.3.4 does not act on it. Test 28 in
+  collection order (`catalog/tests/test_incremental_ingest.py::test_first_ingest_creates_the_catalog`)
+  is the first to open new connections; it took 186 s. Upstream `fc43a826` behaves the
+  same. With `POSTGRES_HOST=127.0.0.1` the suite finishes in about 2 minutes. Anything
+  on the host that reaches the stack's Postgres through `localhost` pays the same delay.
+- **Full suite against Postgres, clean export, fixtures seeded (2026-11-13):**
+
+  | Tree | Passed | Skipped | Failed | Errors |
+  |---|---|---|---|---|
+  | upstream `fc43a826` | 2589 | 4 | 21 | 1 |
+  | fork `bbd87bdd` | 2727 | 4 | 21 | 1 |
+  | fork `c80949b7` | 2739 | 4 | 21 | 1 |
+
+  The 21 failures and 1 error are the same tests in all three (18 kumo,
+  `test_dal_surface`, `test_frontend_schema_qualified`, and two SQLite tests that build
+  a broken Windows path). No shared test differs between fork and upstream; every
+  fork-added test passes. Recipe: export the tree with `git archive`, start
+  `pgvector/pgvector:pg17` on a spare port, export `POSTGRES_*` with host `127.0.0.1`,
+  set `PYTHONPATH` to the export, then `alembic upgrade head`,
+  `python -m dev_tools.fixtures.seed_fixtures`,
+  `python -m dev_tools.fixtures.seed_graph_fixture --reset` (with `CONNECTION_STRINGS`
+  naming the seeded `pagila` database and `sqlite:dev_tools/fixtures/sql/chinook.sqlite`),
+  then `python -m pytest auto_ontology dev_tools -q`.
