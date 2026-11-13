@@ -25,11 +25,12 @@ from typing import Any
 import httpx
 
 from auto_ontology.utils.model_config import resolve
+from auto_ontology.utils.rerank_endpoint import resolve_rerank_endpoint
 
 # Hosted NeMo reranking endpoint — no local GPU required. Override RERANK_ENDPOINT
 # to point at a self-hosted vLLM/NIM ranking server. Each field falls back to
 # DEFAULT_MODELS_<field> when unset.
-_RERANK_ENDPOINT = resolve("RERANK", "ENDPOINT")
+_RERANK_ENDPOINT = resolve_rerank_endpoint()
 _RERANK_MODEL = resolve("RERANK", "MODEL")
 _RERANK_API_KEY = resolve("RERANK", "API_KEY")
 
@@ -122,7 +123,9 @@ def rerank_hits(
     if not hits:
         return hits
     if rerank_invoke_url.strip().lower() == "disabled":
-        raise RerankDisabled
+        raise RerankDisabled(
+            "Rerank is switched off (RERANK_ENDPOINT=disabled); no request was sent."
+        )
     scores = _scores(
         query,
         [str(hit.get(text_key) or "") for hit in hits],
