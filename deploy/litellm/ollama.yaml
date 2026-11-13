@@ -44,9 +44,8 @@ model_list:
   # No rerank model: Ollama has no rerank API. Requests for any other alias,
   # ao-rerank included, get HTTP 400 without leaving the gateway.
 
-litellm_settings:
-  # Drop request fields a provider does not support instead of failing.
-  drop_params: true
+# No drop_params: a request field the provider does not support fails with an
+# error instead of being removed without a message.
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY

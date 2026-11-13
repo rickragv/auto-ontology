@@ -150,8 +150,14 @@ Upstream's `docker-compose.yml` is not changed.
   it at `http://litellm:4000/v1`.
 - Stateless: no database, so no virtual keys, spend tracking or admin UI persistence.
   The master key is the only credential it accepts.
-- Config: `deploy/litellm/<LITELLM_PRESET>.yaml`, mounted read-only. `LITELLM_PRESET`
-  defaults to `ollama`.
+- Config: `deploy/litellm/<LITELLM_PRESET>.yaml`. The directory is mounted read-only
+  and `LITELLM_PRESET` (default `ollama`) picks the file. A name with no matching file
+  stops the gateway with `Config file not found`.
+- No `drop_params`. A request field the provider does not support is answered with an
+  error instead of being removed without a message. All three presets were run this
+  way on 2026-11-13 (one small ingest, compile and question each; every gateway call
+  returned 200). If a model you add rejects a field, list that field under
+  `additional_drop_params` for that model only.
 - `LITELLM_MASTER_KEY` is required. Compose refuses to start the service without it. The
   backend sends the same value as its API key for each triplet. Generate one with:
 
@@ -159,8 +165,8 @@ Upstream's `docker-compose.yml` is not changed.
   echo "sk-$(openssl rand -hex 32)"
   ```
 
-  The gateway refuses to start when the key is unset, empty or a known example value.
-  It does not reject `change-me`, so replace it yourself.
+  The example env files ship the key empty, so the gateway cannot start on a
+  placeholder.
 
 Commands:
 
@@ -191,8 +197,8 @@ Files: `deploy/litellm/ollama.yaml` (gateway) and `deploy/litellm/env.ollama.exa
 
 2. Copy the lines from `deploy/litellm/env.ollama.example` into `.env`. Remove the
    model settings from `.env.example` that they replace (`DEFAULT_MODELS_*`,
-   `REASONING_*`, `NON_REASONING_*`, `EMBED_*`, `RERANK_*`). Replace `change-me` in
-   `LITELLM_MASTER_KEY`.
+   `REASONING_*`, `NON_REASONING_*`, `EMBED_*`, `RERANK_*`). Set `LITELLM_MASTER_KEY`, which
+   ships empty.
 3. Start the gateway first, then the stack, with the commands above.
 
 Why the preset is written the way it is:
@@ -208,8 +214,7 @@ Why the preset is written the way it is:
 - **Embeddings use `openai/bge-m3` on Ollama's `/v1` endpoint.** The backend sends fields
   that only NVIDIA endpoints define (`input_type`, `truncate`, `modality`). Ollama's
   OpenAI-compatible endpoint ignores them. LiteLLM's native `ollama/` embedding route
-  forwards `truncate` and Ollama rejects the request with HTTP 400. `drop_params` does
-  not remove it.
+  forwards `truncate` and Ollama rejects the request with HTTP 400.
 - **`EMBED_DIMENSIONS=1024`** is the output size of `bge-m3`.
 - **Timeout and concurrency lines** (`LLM_INVOKE_TIMEOUT_S=600`, `LLM_MAX_INFLIGHT=2`,
   `SEMANTIC_LLM_MAX_INFLIGHT=2`). A single local GPU serves one request at a time and is

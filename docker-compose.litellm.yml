@@ -19,11 +19,14 @@ services:
     image: ghcr.io/berriai/litellm:v1.108.5
     container_name: auto-ontology-litellm
     restart: unless-stopped
-    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    command: ["--config", "/app/presets/${LITELLM_PRESET:-ollama}.yaml", "--port", "4000"]
     ports:
       - "127.0.0.1:4000:4000"
     volumes:
-      - ./deploy/litellm/${LITELLM_PRESET:-ollama}.yaml:/app/config.yaml:ro
+      # The whole preset directory, not one file: mounting a single file whose
+      # name is mistyped makes Docker create a directory of that name. This way
+      # a wrong LITELLM_PRESET stops the gateway with "Config file not found".
+      - ./deploy/litellm:/app/presets:ro
     environment:
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?set LITELLM_MASTER_KEY in .env}
       # Use the model price map bundled in the image instead of fetching it from

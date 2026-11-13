@@ -39,8 +39,9 @@ model_list:
       # sends input_type, which LiteLLM turns into a taskType that
       # gemini-embedding-2 does not accept. The backend can now omit the field
       # with EMBED_EXTRA_PARAMS=none. This preset keeps gemini-embedding-001 with
-      # a fixed task_type because that needs no extra backend setting. Neither
-      # combination has been tested against Gemini.
+      # a fixed task_type because that needs no extra backend setting. Only this
+      # combination has been run in the full stack; gemini-embedding-2 with
+      # EMBED_EXTRA_PARAMS=none had one direct embedding check.
       model: gemini/gemini-embedding-001
       api_key: os.environ/GEMINI_API_KEY
       # Replaces the invalid taskType LiteLLM would build from input_type.
@@ -55,9 +56,8 @@ model_list:
   # No rerank model. Requests for any other alias, ao-rerank included, get
   # HTTP 400 without leaving the gateway.
 
-litellm_settings:
-  # Drop request fields a provider does not support instead of failing.
-  drop_params: true
+# No drop_params: a request field the provider does not support fails with an
+# error instead of being removed without a message.
 
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
