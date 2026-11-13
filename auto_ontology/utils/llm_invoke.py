@@ -271,9 +271,9 @@ def _build_client(
             max_tokens=max_tokens,
             timeout=LLM_INVOKE_TIMEOUT_S,
             max_retries=0,
-            # Optional; e.g. "none" turns thinking off on Ollama models. Unset =>
-            # the field is not sent, same as upstream.
-            reasoning_effort=os.environ.get("LLM_REASONING_EFFORT") or None,
+            # Optional; e.g. "none" turns thinking off on Ollama models. Unset or
+            # blank => the field is not sent, same as upstream.
+            reasoning_effort=os.environ.get("LLM_REASONING_EFFORT", "").strip() or None,
         )
 
     from langchain_nvidia_ai_endpoints import ChatNVIDIA

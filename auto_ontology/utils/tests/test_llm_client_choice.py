@@ -184,12 +184,21 @@ def test_reasoning_effort_is_absent_from_the_request_when_unset() -> None:
     assert "reasoning_effort" not in _payload(_build("openai/x"))
 
 
-def test_reasoning_effort_is_absent_from_the_request_when_empty(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("raw", ["", "   "])
+def test_reasoning_effort_is_absent_from_the_request_when_blank(
+    monkeypatch: pytest.MonkeyPatch, raw: str
 ) -> None:
-    monkeypatch.setenv("LLM_REASONING_EFFORT", "")
+    monkeypatch.setenv("LLM_REASONING_EFFORT", raw)
 
     assert "reasoning_effort" not in _payload(_build("openai/x"))
+
+
+def test_reasoning_effort_is_sent_without_surrounding_whitespace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("LLM_REASONING_EFFORT", " low ")
+
+    assert _payload(_build("openai/x"))["reasoning_effort"] == "low"
 
 
 def test_reasoning_effort_is_sent_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
