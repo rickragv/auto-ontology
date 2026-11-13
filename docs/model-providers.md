@@ -324,8 +324,12 @@ of 7 on this one question; other questions were not measured.
 
 - Gemini beyond one sanity run per preset. Runs 2 and 3 used one small database and one
   question on a paid key. Unverified:
-  - Any Gemini chat model other than `gemini-3.8-flash`, and `gemini-embedding-2`
-    (which needs `EMBED_EXTRA_PARAMS=none`).
+  - Any Gemini chat model other than `gemini-3.8-flash`.
+  - `gemini-embedding-2` in the full stack. One direct check on 2026-11-13 through the
+    gateway with the backend's own embedding function: with default settings Gemini
+    rejects the request (HTTP 400, invalid `task_type`); with `EMBED_EXTRA_PARAMS=none`
+    it returned 768-dimension vectors for both stored text and search text. Four
+    requests in total; no ingest or question was run on it.
   - Embedding sizes other than 768.
   - Repeatability: each Gemini result is a single ask.
   - Retrieval quality with one task type for both stored rows and search strings.

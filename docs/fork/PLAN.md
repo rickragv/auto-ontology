@@ -248,6 +248,13 @@ each marked UNTESTED. Models: `gemini-3.5-flash-lite` (chat), `gemini-embedding-
 no `taskType` is sent unless the gateway config sets one. Not exercised against real
 Gemini; the presets still use `gemini-embedding-001` with a fixed `task_type`.
 
+**Update 2026-11-13: A4 checked against real Gemini (4 requests).** A one-off gateway
+(LiteLLM 1.108.5) with `gemini/gemini-embedding-2`, `dimensions: 768` and no `task_type`,
+called through the repo's `embed_texts`, 2 texts per call. Default settings: HTTP 400,
+`Invalid value at 'requests[0].task_type'`, for both `passage` and `query`. With
+`EMBED_EXTRA_PARAMS=none`: both calls returned 2 vectors of 768 dimensions. No ingest,
+compile or question was run on this model.
+
 **Update 2026-11-13: chat model changed to `gemini-3.8-flash`** at the user's request
 (Gemini 3.x flash only). Still untested: three keys were tried directly against
 Google and none could run a model (HTTP 401 invalid key; HTTP 402 credits depleted;
