@@ -341,10 +341,13 @@ of 7 on this one question; other questions were not measured.
 - Any hosted provider other than Gemini.
 - A working rerank model through the gateway. Without a rerank model the gateway answers
   `/rerank` with HTTP 400 and the backend falls back to the first candidate.
-- `EMBED_BATCH_SIZE`, `EMBED_MAX_CONCURRENT` and `RERANK_ENDPOINT=disabled` in a full
-  ingest. They have unit tests and one check inside the running backend container (see
-  above). The run 1 dataset has no bridge tables, so the rerank fallback in bridge-table
-  owner selection was never reached in a real ingest.
+- `EMBED_BATCH_SIZE` and `EMBED_MAX_CONCURRENT` at non-default values in a full ingest.
+  They have unit tests and one check inside the running backend container (see above).
+- `RERANK_ENDPOINT=disabled` beyond one compile. On 2026-11-13 a three-table database
+  with one junction table was ingested and compiled on the Ollama preset: the junction
+  table was found, the log showed `Rerank disabled — taking first target Term`, one SQL
+  attribute was created and embedded, and the gateway received no rerank request.
+  Whether the first Term is a good owner was not judged.
 - Linux hosts. The Compose file maps `host.docker.internal` for them, but this was not
   run.
 - Helm. The chart values are not updated for any of this.

@@ -207,6 +207,12 @@ on the Gemini measurement.
   no database: 387 passed, 9 skipped, 1 error (the baseline `test_records.py` error).
   Ruff check and format check clean. Not exercised live: no run has rebuilt the image
   with A5/A6, and the test dataset has no bridge tables.
+- A6 in a real compile, 2026-11-13: a throwaway stack (project `aobr`, since removed) on
+  a made-up SQLite database (`student`, `course`, junction `enrollment`), Ollama preset.
+  Compile 44.5 s, 3 tables, 2 joins, 1 bridge table. Log: `Rerank disabled — taking
+  first target Term 'Student' as bridge owner`; one SQL attribute created and embedded
+  (semantic vectors: 2 Terms, 8 column attributes, 1 SQL attribute); 0 rerank requests
+  at the gateway. No question was asked on it.
 
 - Live check after rebuilding the backend image from `65bbc2f5`: all five containers
   healthy; inside the backend, rerank resolves to `disabled` and raises `RerankDisabled`
