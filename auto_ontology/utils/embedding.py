@@ -38,6 +38,7 @@ from auto_ontology.vdb.dimensions import (
     EmbeddingConfigError,
     check_embedding_sizes,
     configured_embed_dimensions,
+    plain_whole_number,
 )
 from auto_ontology.vdb.records import write_embedded_rows
 
@@ -93,17 +94,15 @@ _FATAL_ATTR = "embed_error_fatal"
 
 def _env_positive_int(name: str, default: int) -> int:
     """The whole number in env var *name*, or *default* when it is unset or blank."""
-    raw = os.environ.get(name, "").strip()
-    if not raw:
+    raw = os.environ.get(name, "")
+    if not raw.strip():
         return default
-    try:
-        value = int(raw)
-    except ValueError:
+    value = plain_whole_number(raw)
+    if value is None or value < 1:
         raise EmbeddingConfigError(
-            f"{name} must be a whole number, got {raw!r}."
-        ) from None
-    if value < 1:
-        raise EmbeddingConfigError(f"{name} must be at least 1, got {raw!r}.")
+            f"{name} must be a whole number of 1 or more in plain digits, or unset "
+            f"for {default}; got {raw!r}."
+        )
     return value
 
 
@@ -116,7 +115,8 @@ def _env_nvidia_fields() -> bool:
     if choice == "none":
         return False
     raise EmbeddingConfigError(
-        f"EMBED_EXTRA_PARAMS must be 'nvidia' or 'none', got {raw!r}."
+        "EMBED_EXTRA_PARAMS must be 'nvidia' or 'none' (any case), or unset for "
+        f"'nvidia'; got {raw!r}."
     )
 
 

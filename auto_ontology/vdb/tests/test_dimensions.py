@@ -24,6 +24,7 @@ from auto_ontology.vdb.dimensions import (
     check_vector_size,
     configured_embed_dimensions,
     lookup_vector_table,
+    plain_whole_number,
 )
 from auto_ontology.vdb.postgres import PostgresVDB
 
@@ -60,15 +61,43 @@ def test_valid_values_parse(
     assert configured_embed_dimensions() == expected
 
 
-@pytest.mark.parametrize("raw", ["abc", "10.5", "0", "-5", "4001"])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "abc",
+        "10.5",
+        "0",
+        "-5",
+        "4001",
+        # int() takes these; a setting should not.
+        "1_024",
+        "+768",
+        "٧٦٨",  # Arabic-Indic 768
+        "７６８",  # fullwidth 768
+    ],
+)
 def test_invalid_values_name_the_variable_and_the_value(
     monkeypatch: pytest.MonkeyPatch, raw: str
 ) -> None:
     monkeypatch.setenv(_ENV, raw)
     with pytest.raises(EmbeddingConfigError) as excinfo:
         configured_embed_dimensions()
-    assert _ENV in str(excinfo.value)
-    assert repr(raw) in str(excinfo.value)
+    assert str(excinfo.value).startswith(
+        f"{_ENV} must be a whole number from 1 to 4000 in plain digits, or unset "
+        f"for 2048; got {raw!r}."
+    )
+
+
+def test_a_value_too_wide_to_index_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(_ENV, "4096")
+    with pytest.raises(EmbeddingConfigError, match="HNSW index"):
+        configured_embed_dimensions()
+
+
+@pytest.mark.parametrize("raw", ["1_024", "+768", "-0", "٣"])
+def test_plain_whole_number_takes_ascii_digits_only(raw: str) -> None:
+    assert plain_whole_number(raw) is None
+    assert plain_whole_number(" 0768 ") == 768
 
 
 def test_the_value_is_read_on_every_call(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -248,7 +248,7 @@ def test_setting_one_variable_leaves_the_other_at_its_default(
 
 
 @pytest.mark.parametrize("name", [BATCH_VAR, CONCURRENT_VAR])
-@pytest.mark.parametrize("bad", ["abc", "0", "-3", "2.5"])
+@pytest.mark.parametrize("bad", ["abc", "0", "-3", "2.5", "1_024", "+8", "٣", "８"])
 def test_a_bad_value_is_rejected_naming_the_variable_and_the_value(
     monkeypatch: pytest.MonkeyPatch, name: str, bad: str
 ) -> None:
@@ -257,8 +257,10 @@ def test_a_bad_value_is_rejected_naming_the_variable_and_the_value(
     with pytest.raises(EmbeddingConfigError) as caught:
         _params()
 
-    assert name in str(caught.value)
-    assert bad in str(caught.value)
+    assert str(caught.value) == (
+        f"{name} must be a whole number of 1 or more in plain digits, or unset "
+        f"for 32; got {bad!r}."
+    )
 
 
 def test_an_explicit_argument_still_avoids_a_bad_environment_value(

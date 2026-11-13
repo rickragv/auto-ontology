@@ -173,11 +173,10 @@ def test_a_bad_value_is_rejected_with_the_allowed_choices(
     for build in (_params, get_embed_params):
         with pytest.raises(EmbeddingConfigError) as caught:
             build()
-        message = str(caught.value)
-        assert VAR in message
-        assert repr(value) in message
-        assert "'nvidia'" in message
-        assert "'none'" in message
+        assert str(caught.value) == (
+            f"{VAR} must be 'nvidia' or 'none' (any case), or unset for "
+            f"'nvidia'; got {value!r}."
+        )
 
 
 @pytest.mark.parametrize("value", [None, "none"])

@@ -72,34 +72,40 @@ class EmbeddingSizeMismatchError(VectorSizeMismatchError):
     """
 
 
+def plain_whole_number(text: str) -> int | None:
+    """*text* as an ``int`` if, surrounding whitespace aside, it is ASCII digits.
+
+    ``None`` otherwise. Stricter than ``int()``, which also takes a sign, ``_``
+    separators and other scripts' digits, none of which belong in a setting.
+    """
+    text = text.strip()
+    return int(text) if text.isascii() and text.isdigit() else None
+
+
 def configured_embed_dimensions() -> int | None:
-    """The ``EMBED_DIMENSIONS`` setting, or ``None`` when it is unset or empty.
+    """The ``EMBED_DIMENSIONS`` setting, or ``None`` when it is unset or blank.
 
     Read on every call, not at import, so a changed environment is honoured.
-    Raises :class:`EmbeddingConfigError` when the value is not a whole number,
-    is below 1, or is above :data:`MAX_INDEXED_DIMENSIONS`.
+    Raises :class:`EmbeddingConfigError` unless the value is a whole number in
+    plain digits from 1 to :data:`MAX_INDEXED_DIMENSIONS`.
     """
-    raw = os.environ.get(EMBED_DIMENSIONS_ENV, "").strip()
-    if not raw:
+    raw = os.environ.get(EMBED_DIMENSIONS_ENV, "")
+    if not raw.strip():
         return None
-    try:
-        value = int(raw)
-    except ValueError:
-        raise EmbeddingConfigError(
-            f"{EMBED_DIMENSIONS_ENV} must be a whole number of dimensions, got {raw!r}."
-        ) from None
-    if value < 1:
-        raise EmbeddingConfigError(
-            f"{EMBED_DIMENSIONS_ENV} must be at least 1, got {raw!r}."
+    value = plain_whole_number(raw)
+    if value is not None and 1 <= value <= MAX_INDEXED_DIMENSIONS:
+        return value
+    message = (
+        f"{EMBED_DIMENSIONS_ENV} must be a whole number from 1 to "
+        f"{MAX_INDEXED_DIMENSIONS} in plain digits, or unset for 2048; got {raw!r}."
+    )
+    if value is not None and value > MAX_INDEXED_DIMENSIONS:
+        message += (
+            " pgvector cannot build an HNSW index on a halfvec column wider than "
+            f"{MAX_INDEXED_DIMENSIONS} dimensions, so every search would fall back "
+            "to a sequential scan."
         )
-    if value > MAX_INDEXED_DIMENSIONS:
-        raise EmbeddingConfigError(
-            f"{EMBED_DIMENSIONS_ENV} must be at most {MAX_INDEXED_DIMENSIONS}, "
-            f"got {raw!r}: pgvector cannot build an HNSW index on a halfvec "
-            f"column wider than {MAX_INDEXED_DIMENSIONS} dimensions, so every "
-            "search would fall back to a sequential scan."
-        )
-    return value
+    raise EmbeddingConfigError(message)
 
 
 def lookup_vector_table(
