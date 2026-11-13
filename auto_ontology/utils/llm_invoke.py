@@ -214,15 +214,24 @@ _CLIENT_KINDS = ("auto", "openai", "nvidia")
 
 
 def _resolve_client_kind(prefix: str) -> str:
-    """``<prefix>_CLIENT`` (else ``DEFAULT_MODELS_CLIENT``), normalised; unset is ``auto``."""
-    raw = resolve(prefix, "CLIENT")
-    kind = raw.strip().lower() or "auto"
-    if kind not in _CLIENT_KINDS:
-        raise ValueError(
-            f"Invalid {prefix}_CLIENT (or DEFAULT_MODELS_CLIENT) value {raw!r}; "
-            f"expected one of: {', '.join(_CLIENT_KINDS)}"
-        )
-    return kind
+    """``<prefix>_CLIENT``, else ``DEFAULT_MODELS_CLIENT``, lowercased; else ``auto``.
+
+    A blank value counts as unset. A bad one raises, naming its variable.
+    """
+    for name in (f"{prefix}_CLIENT", "DEFAULT_MODELS_CLIENT"):
+        raw = os.environ.get(name, "")
+        kind = raw.strip().lower()
+        if kind in _CLIENT_KINDS:
+            return kind
+        if kind:
+            unset = (
+                "'auto'" if name == "DEFAULT_MODELS_CLIENT" else "DEFAULT_MODELS_CLIENT"
+            )
+            raise ValueError(
+                f"{name} must be 'auto', 'openai' or 'nvidia' (any case), or unset "
+                f"for {unset}; got {raw!r}."
+            )
+    return "auto"
 
 
 # Chat client per role: "auto" (model-name prefix rule), "openai" or "nvidia".

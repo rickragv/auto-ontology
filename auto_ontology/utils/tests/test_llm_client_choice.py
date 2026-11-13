@@ -125,6 +125,25 @@ def test_empty_value_means_auto(monkeypatch: pytest.MonkeyPatch, raw: str) -> No
     assert _resolve_client_kind("REASONING") == "auto"
 
 
+@pytest.mark.parametrize("raw", ["", "   "])
+def test_a_blank_role_setting_falls_back_to_the_shared_default(
+    monkeypatch: pytest.MonkeyPatch, raw: str
+) -> None:
+    monkeypatch.setenv("REASONING_CLIENT", raw)
+    monkeypatch.setenv("DEFAULT_MODELS_CLIENT", "openai")
+
+    assert _resolve_client_kind("REASONING") == "openai"
+
+
+def test_a_role_setting_is_used_without_reading_the_shared_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("REASONING_CLIENT", "nvidia")
+    monkeypatch.setenv("DEFAULT_MODELS_CLIENT", "bogus")
+
+    assert _resolve_client_kind("REASONING") == "nvidia"
+
+
 # --- Bad values are rejected ------------------------------------------------
 
 
@@ -136,21 +155,26 @@ def test_unknown_value_raises_an_error_naming_the_setting_and_the_choices(
     with pytest.raises(ValueError) as excinfo:
         _resolve_client_kind("NON_REASONING")
 
-    message = str(excinfo.value)
-    assert "NON_REASONING_CLIENT" in message
-    assert "DEFAULT_MODELS_CLIENT" in message
-    assert "anthropic" in message
-    for allowed in ("auto", "openai", "nvidia"):
-        assert allowed in message
+    assert str(excinfo.value) == (
+        "NON_REASONING_CLIENT must be 'auto', 'openai' or 'nvidia' (any case), "
+        "or unset for DEFAULT_MODELS_CLIENT; got 'anthropic'."
+    )
 
 
-def test_unknown_shared_default_is_rejected_too(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("role", ["", "   "])
+def test_an_unknown_shared_default_is_named_as_the_variable_at_fault(
+    monkeypatch: pytest.MonkeyPatch, role: str
 ) -> None:
-    monkeypatch.setenv("DEFAULT_MODELS_CLIENT", "bogus")
+    monkeypatch.setenv("REASONING_CLIENT", role)
+    monkeypatch.setenv("DEFAULT_MODELS_CLIENT", " bogus ")
 
-    with pytest.raises(ValueError, match="bogus"):
+    with pytest.raises(ValueError) as excinfo:
         _resolve_client_kind("REASONING")
+
+    assert str(excinfo.value) == (
+        "DEFAULT_MODELS_CLIENT must be 'auto', 'openai' or 'nvidia' (any case), "
+        "or unset for 'auto'; got ' bogus '."
+    )
 
 
 # --- LLM_REASONING_EFFORT ---------------------------------------------------
