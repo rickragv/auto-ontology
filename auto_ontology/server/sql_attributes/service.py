@@ -197,9 +197,10 @@ def validate_sql_attribute(
 
 def _reembed_sql_attribute(attr_id: str, database_name: str | None) -> None:
     vdb = get_semantic_vdb()
+    embed_params = get_embed_params()
     vdb.delete_by_id(attr_id, check_size=True)
     _embed_sql_attribute(
-        embed_params=get_embed_params(),
+        embed_params=embed_params,
         vdb=vdb,
         attr_id=attr_id,
         database_name=database_name,

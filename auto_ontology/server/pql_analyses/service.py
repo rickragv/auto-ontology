@@ -115,8 +115,10 @@ def update_pql_analysis(
 
     upsert_pql_analysis_node(analysis_id, name, description, pql)
 
+    from auto_ontology.utils import get_embed_params
     from auto_ontology.vdb import get_semantic_vdb
 
+    get_embed_params()  # a bad EMBED_* setting fails here, before the delete
     get_semantic_vdb().delete_by_id(analysis_id, check_size=True)
     _embed(analysis_id)
 

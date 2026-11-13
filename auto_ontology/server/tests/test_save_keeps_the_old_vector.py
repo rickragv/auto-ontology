@@ -6,8 +6,9 @@ Each save that re-embeds an item deletes its stored vector and then writes the
 new one. The size guard runs on the write, so it used to fire after the delete:
 the save answered with the mismatch, and the old vector, still the right size
 for the table, was gone. These deletes now run the guard first and delete
-nothing. A plain delete of the item still goes ahead, as deleting a whole
-datasource does: it never reads or writes a vector.
+nothing, and every save reads its ``EMBED_*`` settings before its delete, so
+an invalid one deletes nothing either. A plain delete of the item still goes
+ahead, as deleting a whole datasource does: it never reads or writes a vector.
 
 Real ``PostgresVDB`` instances over a stubbed table; every SQL statement they
 would send is recorded instead. No database or network.
@@ -33,7 +34,7 @@ from auto_ontology.server.sql_attributes import service as sql_attr_service
 from auto_ontology.server.terms import service as term_service
 from auto_ontology.utils import embedding as embedding_module
 from auto_ontology.utils.embedding import EmbedParams
-from auto_ontology.vdb.dimensions import VectorSizeMismatchError
+from auto_ontology.vdb.dimensions import EmbeddingConfigError, VectorSizeMismatchError
 from auto_ontology.vdb.postgres import PostgresVDB
 from auto_ontology.vdb.records import write_embedded_rows
 
@@ -301,6 +302,28 @@ def test_a_save_on_a_table_of_another_size_keeps_the_old_vector(
 
     assert stub.statements == []
     stub.create_sync.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [("EMBED_BATCH_SIZE", "0"), ("EMBED_EXTRA_PARAMS", "nvdia")],
+)
+@pytest.mark.parametrize("save", _SAVES, ids=lambda save: save.__name__.strip("_"))
+def test_a_save_with_a_bad_embedding_setting_keeps_the_old_vector(
+    monkeypatch: pytest.MonkeyPatch,
+    table: Callable[[int], _Table],
+    save: Callable[[pytest.MonkeyPatch, PostgresVDB], None],
+    name: str,
+    value: str,
+) -> None:
+    """The setting is read before the delete, on a table of the right size."""
+    stub = table(_CONFIGURED)
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(EmbeddingConfigError, match=name):
+        save(monkeypatch, stub.vdb())
+
+    assert stub.statements == []
 
 
 # ---------------------------------------------------------------------------

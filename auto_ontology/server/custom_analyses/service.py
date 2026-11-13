@@ -234,8 +234,10 @@ def update_custom_analysis(
 
     row = _persist_analysis_with_sql(analysis_node, sql, query_obj)
 
+    from auto_ontology.utils import get_embed_params
     from auto_ontology.vdb import get_semantic_vdb
 
+    get_embed_params()  # a bad EMBED_* setting fails here, before the delete
     get_semantic_vdb().delete_by_id(analysis_id, check_size=True)
     _embed_analysis(analysis_id)
 
