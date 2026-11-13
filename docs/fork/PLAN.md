@@ -577,10 +577,11 @@ Settle each by measurement, then record the answer here.
   | upstream `fc43a826` | 2589 | 4 | 21 | 1 |
   | fork `bbd87bdd` | 2727 | 4 | 21 | 1 |
   | fork `c80949b7` | 2739 | 4 | 21 | 1 |
+  | fork `368eea30` | 2753 | 4 | 21 | 1 |
 
-  The 21 failures and 1 error are the same tests in all three (18 kumo,
-  `test_dal_surface`, `test_frontend_schema_qualified`, and two SQLite tests that build
-  a broken Windows path). No shared test differs between fork and upstream; every
+  The 21 failures and 1 error are the same 22 test ids in all four, compared by id
+  (18 kumo `test_wiring`, `test_dal_surface`, `test_frontend_schema_qualified`, the
+  SQLite `test_primary_keys` failure and the SQLite `test_nullability` error). No shared test differs between fork and upstream; every
   fork-added test passes. Recipe: export the tree with `git archive`, start
   `pgvector/pgvector:pg17` on a spare port, export `POSTGRES_*` with host `127.0.0.1`,
   set `PYTHONPATH` to the export, then `alembic upgrade head`,
