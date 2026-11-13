@@ -34,7 +34,11 @@ import httpx
 from openai import APIStatusError, Omit, OpenAI
 
 from auto_ontology.utils.model_config import resolve
-from auto_ontology.vdb.dimensions import EmbeddingConfigError
+from auto_ontology.vdb.dimensions import (
+    EmbeddingConfigError,
+    check_embedding_sizes,
+    configured_embed_dimensions,
+)
 from auto_ontology.vdb.records import write_embedded_rows
 
 if TYPE_CHECKING:
@@ -213,6 +217,8 @@ def embed_texts(
     *timeout* (seconds per request) and *retries* (per request) default to the
     ingest-sized ``params.request_timeout_s`` and ``_REQUEST_RETRIES``; a caller
     with its own retry loop passes ``retries=0`` so the two do not multiply.
+    With ``EMBED_DIMENSIONS`` set, a vector of another length raises
+    :class:`~auto_ontology.vdb.dimensions.EmbeddingSizeMismatchError`.
     """
     stripped = [text.strip() if isinstance(text, str) else "" for text in texts]
     to_send = [i for i, text in enumerate(stripped) if text]
@@ -220,6 +226,7 @@ def embed_texts(
     if not to_send:
         return vectors
 
+    expected_size = configured_embed_dimensions()  # None when unset: no check
     client = _client(params)
     if retries is not None:
         client = client.with_options(max_retries=retries)
@@ -260,6 +267,7 @@ def embed_texts(
         with ThreadPoolExecutor(max_workers=workers) as pool:
             # list() so the first failed batch re-raises here.
             list(pool.map(_embed_batch, batches))
+    check_embedding_sizes(params.model_name, vectors, expected_size)
     return vectors
 
 
@@ -282,7 +290,8 @@ def _is_fatal(exc: Exception) -> bool:
 def _embed_frame(frame: "pd.DataFrame", params: EmbedParams) -> "pd.DataFrame":
     """Embed *frame*'s ``text`` column as passages into ``metadata["embedding"]``.
 
-    Never raises. A failure leaves every row without an embedding and the
+    Never raises, except :class:`EmbeddingConfigError`, which every chunk would
+    hit again. A failure leaves every row without an embedding and the
     reason in ``frame.attrs``, which is what lets the caller retry the chunk,
     log why it failed, and still write the chunks that worked.
     """
@@ -294,6 +303,8 @@ def _embed_frame(frame: "pd.DataFrame", params: EmbedParams) -> "pd.DataFrame":
     ]
     try:
         vectors = embed_texts(list(out.get("text", [""] * len(out))), params, "passage")
+    except EmbeddingConfigError:
+        raise
     except Exception as exc:
         out.attrs[_ERROR_ATTR] = f"{type(exc).__name__}: {exc}"
         out.attrs[_FATAL_ATTR] = _is_fatal(exc)
@@ -516,7 +527,8 @@ def embed_rows(
     that came back with an embedding, ready for
     :func:`~auto_ontology.vdb.records.write_embedded_rows`. Raises
     ``RuntimeError`` when the endpoint fails or returns no embeddings; *what*
-    names the rows in that message.
+    names the rows in that message. An :class:`EmbeddingConfigError` is raised
+    as it is, so the save route can answer it with its message.
     """
     if not rows:
         return []
@@ -528,6 +540,8 @@ def embed_rows(
             timeout=_INTERACTIVE_TIMEOUT_S,
             retries=_INTERACTIVE_RETRIES,
         )
+    except EmbeddingConfigError:
+        raise
     except Exception as exc:
         raise RuntimeError(
             f"Embedding {len(rows)} {what} row(s) via {params.embed_invoke_url} "

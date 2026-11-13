@@ -8,17 +8,22 @@ It must match the output size of the embedding model (``EMBED_MODEL``).
 
 A table keeps the size it was created with. Changing the setting, or the model,
 afterwards would otherwise surface only as pgvector's ``expected N dimensions,
-not M`` on the first write or search, so :func:`check_vector_size` turns that
-into an error that says what happened and how to rebuild.
+not M`` on the first write or search, so two checks turn that into an error
+that says what happened: :func:`check_vector_size` compares a table with the
+setting, and :func:`check_embedding_sizes` compares what the model returned
+with the setting. Both are skipped when ``EMBED_DIMENSIONS`` is unset, except
+that the table check then compares against the 2048 default.
 """
 
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable, Sequence
 
 import psycopg
 
 EMBED_DIMENSIONS_ENV = "EMBED_DIMENSIONS"
+EMBED_MODEL_ENV = "EMBED_MODEL"
 
 #: The widest ``halfvec`` column pgvector can build an HNSW index on.
 #: ``PostgresVDB._create_vector_index`` converts every vector column to
@@ -57,6 +62,14 @@ class EmbeddingConfigError(ValueError):
 
 class VectorSizeMismatchError(EmbeddingConfigError):
     """An existing vector table holds embeddings of a different size."""
+
+
+class EmbeddingSizeMismatchError(VectorSizeMismatchError):
+    """The embedding model returned vectors of a size other than ``EMBED_DIMENSIONS``.
+
+    A :class:`VectorSizeMismatchError`, because writing or searching with them
+    would fail the same way against every table built at the configured size.
+    """
 
 
 def configured_embed_dimensions() -> int | None:
@@ -130,3 +143,27 @@ def check_vector_size(
         "the semantic layer, which a re-ingest does not re-embed (see "
         "docs/model-providers.md)."
     )
+
+
+def check_embedding_sizes(
+    model_name: str,
+    vectors: Iterable[Sequence[float] | None],
+    expected: int | None,
+) -> None:
+    """Raise :class:`EmbeddingSizeMismatchError` if a vector's length is not *expected*.
+
+    *expected* is :func:`configured_embed_dimensions`. ``None``, the setting
+    unset, checks nothing. ``None`` vectors, for blank texts that were never
+    sent, are skipped.
+    """
+    if expected is None:
+        return
+    for vector in vectors:
+        if vector is not None and len(vector) != expected:
+            raise EmbeddingSizeMismatchError(
+                f"The embedding model {model_name!r} ({EMBED_MODEL_ENV}) returned "
+                f"{len(vector)}-dimension vectors, but {EMBED_DIMENSIONS_ENV} is "
+                f"{expected}. Use a model that returns {expected} dimensions, or "
+                f"set {EMBED_DIMENSIONS_ENV}={len(vector)} and rebuild the vector "
+                "tables at that size (see docs/model-providers.md)."
+            )
