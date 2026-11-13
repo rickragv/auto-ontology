@@ -50,13 +50,18 @@ four triplets for that reason.
 
 | Setting | Default | Allowed values | When a bad value fails |
 | --- | --- | --- | --- |
-| `REASONING_CLIENT`, `NON_REASONING_CLIENT`, `DEFAULT_MODELS_CLIENT` | `auto` | `auto`, `openai`, `nvidia` (case and surrounding spaces ignored) | `ValueError` at import of `auto_ontology/utils/llm_invoke.py`, so the backend does not start. |
-| `LLM_REASONING_EFFORT` | unset (field not sent) | Any non-empty string the model accepts, for example `none` | Not validated by the backend. Sent only on the OpenAI-style client; the provider may reject it on the first chat call. |
-| `EMBED_DIMENSIONS` | unset (2048 columns, as upstream) | Whole number from 1 to 4000 | `ValueError` when the vector store is first opened (`get_vdb`), not at import. |
-| `EMBED_BATCH_SIZE` | 32 | Whole number, 1 or more | `ValueError` when the embedding parameters are first built, that is on the first embedding call. |
+| `REASONING_CLIENT`, `NON_REASONING_CLIENT`, `DEFAULT_MODELS_CLIENT` | `auto` | `auto`, `openai`, `nvidia` (case and surrounding spaces ignored; blank counts as unset) | `ValueError` at import of `auto_ontology/utils/llm_invoke.py`, so the backend does not start. The message names the variable that held the value. |
+| `LLM_REASONING_EFFORT` | unset (field not sent) | Any non-empty string the model accepts, for example `none` (surrounding spaces ignored) | Not validated by the backend: accepted values differ by provider. Sent only on the OpenAI-style client; the provider may reject it on the first chat call. |
+| `EMBED_DIMENSIONS` | unset (2048 columns, as upstream) | Whole number from 1 to 4000, plain digits | `EmbeddingConfigError` (a `ValueError`) when the vector store is first opened or the first text is embedded, not at import. |
+| `EMBED_BATCH_SIZE` | 32 | Whole number, 1 or more, plain digits | `EmbeddingConfigError` when the embedding parameters are first built, that is on the first embedding call. |
 | `EMBED_MAX_CONCURRENT` | 32 | Whole number, 1 or more | Same as `EMBED_BATCH_SIZE`. |
-| `EMBED_EXTRA_PARAMS` | `nvidia` | `nvidia` or `none` (case and surrounding spaces ignored; unset or blank means `nvidia`) | `ValueError` when the embedding parameters are first built, that is on the first embedding call, not at startup. |
-| `RERANK_ENDPOINT=disabled` | unset (NVIDIA or configured endpoint) | The literal word `disabled`, any case | Not applicable; any other value is used as a URL. |
+| `EMBED_EXTRA_PARAMS` | `nvidia` | `nvidia` or `none` (case and surrounding spaces ignored; unset or blank means `nvidia`) | `EmbeddingConfigError` when the embedding parameters are first built, that is on the first embedding call, not at startup. |
+| `RERANK_ENDPOINT=disabled` | unset (NVIDIA or configured endpoint) | An `http://` or `https://` URL, or the word `disabled` (any case, surrounding spaces ignored) | `ValueError` when the rerank module is imported. The ingestion service, the only user of rerank, does not start. `none`, `off` and the like are refused, not treated as URLs. |
+
+No setting falls back to a default on a bad value. Every error names the variable, the
+accepted values, what unset means and the value it got. A bad embedding setting met
+during a save, a search or a compile is reported the same way as a size mismatch (HTTP
+422 on saves, an error event on a question), not logged and skipped.
 
 Details:
 
@@ -73,6 +78,13 @@ Details:
   existing table raises `VectorSizeMismatchError`. The message names both sizes and
   tells you how to recover; the full procedure is under
   [Changing the embedding model or dimension](#changing-the-embedding-model-or-dimension).
+- **Model output size.** When `EMBED_DIMENSIONS` is set, every vector the model returns
+  is checked against it. Another length raises `EmbeddingSizeMismatchError`, which names
+  the model and both sizes. An ingest then fails before it deletes or writes anything,
+  and a compilation pass sends one short text first and stops before any LLM call
+  (checked live: 0.3 s, no Term stored). That check costs one embedding request per
+  compilation pass that has tables to compile. With `EMBED_DIMENSIONS` unset nothing is
+  checked and nothing extra is sent.
 - **Deleting a datasource after a mismatch.** Deletes are not blocked by the size check,
   so a datasource can still be removed while the setting and the tables disagree. Writes
   and searches raise the error.
@@ -105,14 +117,18 @@ with, and use the model that produced those vectors.
 
 1. Stop the backend and the ingestion service. While the setting and the tables
    disagree, the scheduled ingest and compilation fail with the error and change
-   nothing. A Term, attribute or sample-values save answers HTTP 422 with the error, but
-   the edited text is already stored; its vector is not.
+   nothing. A Term, attribute, sample-values, SQL attribute or analysis save reports the
+   error (HTTP 422; 500 for custom and predictive analyses, which have no handler). The
+   edited text is already stored, and the item keeps its old vector, so option 1 loses
+   nothing. The exception is a save whose embedding request itself fails (endpoint down,
+   or a model of the wrong size): the old vector is deleted before the request, as in
+   upstream, and the item stays out of search until it is saved again.
 2. Set the new `EMBED_MODEL` and `EMBED_DIMENSIONS`. The model must really return that
    size: `EMBED_DIMENSIONS` sizes the tables and is not sent with the request. If the two
-   differ, the ingest fails with pgvector's `expected N dimensions, not M`. To shorten a
-   model's output, set `dimensions` on the model in the gateway config. For an Ollama
-   model behind the `openai/` route also add `allowed_openai_params: ["dimensions"]`, or
-   the gateway drops the field without a message.
+   differ, the ingest and the compilation stop with `EmbeddingSizeMismatchError`. To
+   shorten a model's output, set `dimensions` on the model in the gateway config. For an
+   Ollama model behind the `openai/` route also add
+   `allowed_openai_params: ["dimensions"]`; without it the field did not reach Ollama.
 3. Drop both vector tables. This removes only embeddings:
    `DROP TABLE IF EXISTS vdb.data_objects_layer, vdb.semantic_layer;`
 4. Start the services. The startup ingest recreates `vdb.data_objects_layer` at the new
@@ -356,7 +372,7 @@ of 7 on this one question; other questions were not measured.
 - Linux hosts. The Compose file maps `host.docker.internal` for them, but this was not
   run.
 - Helm. The chart values are not updated for any of this.
-- A regression run with upstream defaults and an NVIDIA key.
+- A live run with upstream defaults and an NVIDIA key. No key was available.
 
 ## Known issues that affect use
 

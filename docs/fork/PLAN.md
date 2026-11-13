@@ -312,7 +312,7 @@ A change is not done until its check has been run and the result recorded.
 | 1 | Ollama `qwen3.5:9b` via gateway | Ollama `bge-m3` via gateway | 1024 |
 | 2 | Gemini via gateway | Gemini via gateway | provider default or a set value |
 | 3 | Ollama via gateway | Gemini via gateway | as run 2 |
-| 4 | Upstream defaults, no new settings | — | regression check; needs an NVIDIA key, skip and say so if none |
+| 4 | Upstream defaults, no new settings | — | not run: no NVIDIA key. Replaced by a no-key request comparison against upstream |
 
 For each run: ingest the BIRD `financial` SQLite database (file named `main.sqlite`; see
 known issues), confirm the vector tables have the expected dimension, then ask
@@ -571,6 +571,44 @@ Settle each by measurement, then record the answer here.
   same. With `POSTGRES_HOST=127.0.0.1` the suite finishes in about 2 minutes. Anything
   on the host that reaches the stack's Postgres through `localhost` pays the same delay.
 - **Full suite against Postgres, clean export, fixtures seeded (2026-11-13):**
+
+## Audit against "library standard, no unexpected fallbacks" (2026-11-13)
+
+The user asked for open-source library standards, no gaps and no unexpected fallbacks,
+and has no NVIDIA key (run 4 will not be run; the default path must stay as upstream).
+An independent read-only audit of `upstream/main..HEAD` found 1 must-fix, 7 should-fix
+and several nits. All were fixed except where noted.
+
+| Finding | Fix | Check |
+|---|---|---|
+| Model output size never compared with `EMBED_DIMENSIONS`: searches came back empty and an ingest deleted rows before failing | `embed_texts` checks every vector when the setting is set (`EmbeddingSizeMismatchError`); not retried; ingest fails before its reset; compilation sends one probe text before any table (`utils/embedding_probe.py`) | tests; live with `bge-m3` (1024) and `EMBED_DIMENSIONS=768`: ingest failed with the message, compile stopped in 0.3 s with 0 chat calls and 0 Terms |
+| Bad `EMBED_*` value on `PATCH /terms` answered 200 | `EmbeddingConfigError(ValueError)` base class; all carve-outs catch it | 14 tests fail without it |
+| A save during a mismatch deleted the old vector before the guard | `delete_by_id(check_size=True)` on the 7 delete-then-embed saves; settings read before the delete | tests on the recorded DELETE |
+| `RERANK_ENDPOINT` near-misses (`none`, `off`) used as URLs | refused when the rerank module is imported (`utils/rerank_endpoint.py`) | tests; in the built image the ingestion service import raises, the server (which never imports rerank) starts |
+| Full suite depended on the developer's `.env` | `auto_ontology/conftest.py` unsets fork settings per test | upstream `test_embedding.py` 41 passed with fork settings exported |
+| `drop_params: true` in every preset (silent field drop) | removed | each preset re-run on a 3-table database: ingest, compile, 1 question, every gateway call 200 |
+| Example env files shipped `LITELLM_MASTER_KEY=change-me` | shipped empty; Compose refuses to start | `compose config` error seen |
+| Mistyped `LITELLM_PRESET` created a directory and an obscure error | preset directory mounted, file chosen in `command`; gateway stops with `Config file not found` | seen with `LITELLM_PRESET=Gemni`. Compose's `create_host_path: false` was tried first and is not honoured on Docker Desktop for Windows |
+| Nits: blank `*_CLIENT`, error wording, `LLM_REASONING_EFFORT` spaces, lenient integers, stale preset comments, gateway variables missing from `.env.example` | fixed | tests |
+
+Not fixed, by decision:
+- A save whose embedding request itself fails still loses the item's old vector
+  (delete-then-embed order is upstream's; reordering it is not a local change).
+- Custom and predictive analysis saves answer 500, not 422, on these errors: they have
+  no handler upstream.
+- `sql_reconstruction.py`, `interactive/entity_resolution.py`, `kumo/rag.py` and
+  `semantic_fk.py` still catch everything; the main question and compile flows stop
+  earlier.
+- The question path retries an error whose text contains "502", "503" or "504", so a
+  size such as 1504 is delayed about 6 s before it surfaces.
+- The bridge-table owner picked with rerank off is "the first candidate Term", and that
+  order is not stable: `Student` in two runs, `Course` in one.
+- Fork files carry `SPDX-License-Identifier` only, no copyright line.
+
+Cost to the diff: upstream-owned source files changed are now 18 (+219/-26 lines),
+up from 13. With no fork setting set, no added check runs except the table-size guard,
+which already compared against 2048.
+
 
   | Tree | Passed | Skipped | Failed | Errors |
   |---|---|---|---|---|
