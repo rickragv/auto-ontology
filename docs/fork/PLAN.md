@@ -616,8 +616,10 @@ which already compared against 2048.
   | fork `bbd87bdd` | 2727 | 4 | 21 | 1 |
   | fork `c80949b7` | 2739 | 4 | 21 | 1 |
   | fork `368eea30` | 2753 | 4 | 21 | 1 |
+  | fork `c55b3182` (after the audit fixes) | 2855 | 4 | 21 | 1 |
+  | fork `c55b3182`, all fork settings exported | 2855 | 4 | 21 | 1 |
 
-  The 21 failures and 1 error are the same 22 test ids in all four, compared by id
+  The 21 failures and 1 error are the same 22 test ids in every row, compared by id
   (18 kumo `test_wiring`, `test_dal_surface`, `test_frontend_schema_qualified`, the
   SQLite `test_primary_keys` failure and the SQLite `test_nullability` error). No shared test differs between fork and upstream; every
   fork-added test passes. Recipe: export the tree with `git archive`, start
