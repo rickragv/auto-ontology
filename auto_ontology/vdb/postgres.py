@@ -481,7 +481,7 @@ class PostgresVDB:
         )
         return deleted
 
-    def delete_by_id(self, node_id: str) -> int:
+    def delete_by_id(self, node_id: str, *, check_size: bool = False) -> int:
         """Delete every row whose metadata ``id`` matches ``node_id``.
 
         ``id`` lives in the JSONB ``langchain_metadata`` column (it is not
@@ -494,8 +494,18 @@ class PostgresVDB:
 
         Returns the number of rows deleted (``0`` when the collection
         table doesn't exist yet or nothing matched).
+
+        ``check_size=True`` is for a delete that makes way for a new vector:
+        the vector size guard runs first, so a mismatch deletes nothing.
         """
-        if not self._table_exists():
+        exists, existing_size = lookup_vector_table(
+            self.connection_string, self.schema_name, self.collection_name
+        )
+        if exists and check_size:
+            check_vector_size(
+                self.schema_name, self.collection_name, existing_size, self.vector_size
+            )
+        if not exists:
             logger.info(
                 "PostgresVDB.delete_by_id: collection %s not found, nothing to delete",
                 self.collection_name,

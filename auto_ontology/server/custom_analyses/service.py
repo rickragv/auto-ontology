@@ -236,7 +236,7 @@ def update_custom_analysis(
 
     from auto_ontology.vdb import get_semantic_vdb
 
-    get_semantic_vdb().delete_by_id(analysis_id)
+    get_semantic_vdb().delete_by_id(analysis_id, check_size=True)
     _embed_analysis(analysis_id)
 
     return row

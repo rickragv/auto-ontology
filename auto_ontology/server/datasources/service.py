@@ -206,7 +206,7 @@ def _refresh_vdb_embeddings(node_ids: list[str]) -> None:
 
     vdb = get_data_vdb()
     for nid in unique_ids:
-        vdb.delete_by_id(nid)
+        vdb.delete_by_id(nid, check_size=True)
     write_embedded_rows(vdb, rows)
 
 
@@ -222,5 +222,5 @@ def _refresh_semantic_column_attribute_embeddings(column_id: str) -> None:
         for attr in attrs:
             attr_id = attr.get("id")
             if attr_id:
-                embedder.vdb.delete_by_id(attr_id)
+                embedder.vdb.delete_by_id(attr_id, check_size=True)
         embedder.embed_column_attributes(attrs)

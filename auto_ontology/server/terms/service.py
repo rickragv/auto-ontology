@@ -161,7 +161,7 @@ def update_column_attribute(
 
     embedder = build_semantic_embedder(row.get("database_name") or "", reset=False)
     if embedder is not None:
-        embedder.vdb.delete_by_id(attr_id)
+        embedder.vdb.delete_by_id(attr_id, check_size=True)
         attr = {
             "id": row["id"],
             "name": row["name"],
@@ -194,7 +194,7 @@ def refresh_term_embeddings(term_id: str, *, refresh_dependent_attrs: bool) -> N
         return
 
     vdb = embedder.vdb
-    vdb.delete_by_id(term_id)
+    vdb.delete_by_id(term_id, check_size=True)
     if refresh_dependent_attrs:
         for attr in column_attrs:
             attr_id = attr.get("id")
