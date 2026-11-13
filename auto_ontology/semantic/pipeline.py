@@ -21,6 +21,7 @@ from auto_ontology.semantic.domain import DomainSummary, load_domain_summary
 from auto_ontology.semantic.embed import SemanticEmbedder
 from auto_ontology.semantic.models import ProcessTableResult
 from auto_ontology.semantic.visit_enter import process_table, reset_sampling_breaker
+from auto_ontology.utils.embedding_probe import check_embedding_model_size
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,8 @@ def compile_semantic_layer(
 
     if embedder is not None:
         embedder.vdb.create_index()
+        if tables:
+            check_embedding_model_size(embedder.embed_params)
 
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
         futures = {
