@@ -335,6 +335,24 @@ rerank call raised `RerankDisabled` and sent no request. With `EMBED_BATCH_SIZE=
 `EMBED_MAX_CONCURRENT=2`, embedding 23 texts made exactly 5 gateway requests and returned
 23 vectors of 1024 dimensions.
 
+**Upstream defaults without an NVIDIA key (2026-11-13).** No key was available, so the
+default path was compared with upstream instead of run live. The same driver ran the
+production functions on upstream `fc43a826` and on this fork at `7a2e2624`, with no fork
+setting set, against a local stand-in that recorded every request. Three setups: the
+upstream `.env.example` with dummy keys, a single `DEFAULT_MODELS_API_KEY` with the
+built-in defaults, and `.env.example` as shipped with the NVIDIA hostnames resolved to
+the stand-in.
+
+- Client construction, plain and structured chat calls, embedding (1,100 texts: 35
+  requests, 32 texts each, at most 32 in flight), rerank and the vector-table steps sent
+  the same requests in both trees: same bodies, headers and counts. Only the arrival
+  order of concurrent embedding requests varied.
+- No request carried `dimensions`. Tables were created as `halfvec(2048)` in both.
+- One deliberate difference, on a malformed `RERANK_ENDPOINT` only: see
+  [Known issues that affect use](#known-issues-that-affect-use).
+- Not covered by the comparison: error and retry paths (the stand-in always succeeded),
+  streaming, a full compile or question, Helm, and how real NVIDIA servers answer.
+
 Read this plainly: with a 9B local model and no column descriptions, the stack gave a
 wrong answer every time. This is a limitation of the small model and the missing
 descriptions. The same limitation was seen on direct Ollama without the gateway, so it
@@ -372,10 +390,17 @@ of 7 on this one question; other questions were not measured.
 - Linux hosts. The Compose file maps `host.docker.internal` for them, but this was not
   run.
 - Helm. The chart values are not updated for any of this.
-- A live run with upstream defaults and an NVIDIA key. No key was available.
+- A live run with upstream defaults and an NVIDIA key. No key was available; the
+  request comparison above stands in for it.
 
 ## Known issues that affect use
 
+- A malformed `RERANK_ENDPOINT` behaves differently from upstream, although it is an
+  upstream variable. Upstream starts with any value; a value that is not a usable URL
+  makes every rerank call fail and take the first candidate, with an error in the log.
+  Here a value that is neither an `http://` or `https://` URL nor `disabled` stops the
+  ingestion service at startup, and spaces around a valid URL are removed. A valid URL
+  and an unset variable behave as upstream.
 - A SQLite source file must be named `main.sqlite`. Other names produce three-part table
   names that SQLite rejects. This is an upstream issue, not changed here.
 - On Windows, clone with `core.autocrlf=false`. Windows line endings break the

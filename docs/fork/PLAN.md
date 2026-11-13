@@ -629,3 +629,32 @@ which already compared against 2048.
   `python -m dev_tools.fixtures.seed_graph_fixture --reset` (with `CONNECTION_STRINGS`
   naming the seeded `pagila` database and `sqlite:dev_tools/fixtures/sql/chinook.sqlite`),
   then `python -m pytest auto_ontology dev_tools -q`.
+
+## Default path compared with upstream, no key (2026-11-13)
+
+Stands in for run 4. One driver ran the production functions on upstream `fc43a826` and
+on the fork (first `c958e268`, then again at `7a2e2624`) with no fork setting set and no
+`.env`, against a local HTTP and TLS stand-in that recorded every request; a socket guard
+allowed loopback only. Setups: S1 upstream `.env.example` with dummy keys and a throwaway
+pgvector; S2 only `DEFAULT_MODELS_API_KEY`; S3 `.env.example` as shipped, NVIDIA
+hostnames resolved to the stand-in.
+
+- Requests identical in all three setups at both fork commits: client builds
+  (`ChatNVIDIA` / `ChatOpenAI` / `ChatNVIDIA`), plain and structured chat, `embed_texts`
+  on 1,100 texts (35 requests, peak 32 in flight), `embed_rows`, `batch_embed_chunks`,
+  `rerank_hits`, the bridge owner call, and the S1 database steps. Headers matched too.
+  No `dimensions` field; vector size 2048 in both.
+- Differences that send nothing: `EmbedParams.nvidia_fields=True`, `reasoning_effort`
+  in `ChatOpenAI.model_fields_set` (value `None`), a different table-existence SQL text.
+- **One real difference, kept by decision:** `RERANK_ENDPOINT` is upstream's variable,
+  and `36914e66` validates it at import. A value with no scheme, or only spaces, starts
+  on upstream (every rerank call fails and takes the first Term) and stops the ingestion
+  service here. A URL padded with spaces fails on upstream and works here. Kept because
+  the alternative is the silent wrong-URL path the audit removed; documented in
+  `docs/model-providers.md`. To restore exact parity, validate only the `disabled` word
+  and pass everything else through.
+- Not covered: error and retry paths, streaming and async chat (read only), full compile
+  and question runs, Helm, compose defaults, real NVIDIA server behaviour. A database
+  built by an older upstream at another vector size would raise on open here; inferred,
+  not tested.
+- Harness and records: session scratchpad `parity/` (not in the repo).
