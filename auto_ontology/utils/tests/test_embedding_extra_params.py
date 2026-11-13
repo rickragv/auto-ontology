@@ -20,6 +20,7 @@ from openai import OpenAI
 
 from auto_ontology.utils import embedding
 from auto_ontology.utils.embedding import EmbedParams, embed_texts, get_embed_params
+from auto_ontology.vdb.dimensions import EmbeddingConfigError
 
 VAR = "EMBED_EXTRA_PARAMS"
 
@@ -170,7 +171,7 @@ def test_a_bad_value_is_rejected_with_the_allowed_choices(
     monkeypatch.setenv(VAR, value)
 
     for build in (_params, get_embed_params):
-        with pytest.raises(ValueError) as caught:
+        with pytest.raises(EmbeddingConfigError) as caught:
             build()
         message = str(caught.value)
         assert VAR in message

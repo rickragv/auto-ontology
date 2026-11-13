@@ -34,6 +34,7 @@ import httpx
 from openai import APIStatusError, Omit, OpenAI
 
 from auto_ontology.utils.model_config import resolve
+from auto_ontology.vdb.dimensions import EmbeddingConfigError
 from auto_ontology.vdb.records import write_embedded_rows
 
 if TYPE_CHECKING:
@@ -94,9 +95,11 @@ def _env_positive_int(name: str, default: int) -> int:
     try:
         value = int(raw)
     except ValueError:
-        raise ValueError(f"{name} must be a whole number, got {raw!r}.") from None
+        raise EmbeddingConfigError(
+            f"{name} must be a whole number, got {raw!r}."
+        ) from None
     if value < 1:
-        raise ValueError(f"{name} must be at least 1, got {raw!r}.")
+        raise EmbeddingConfigError(f"{name} must be at least 1, got {raw!r}.")
     return value
 
 
@@ -108,7 +111,9 @@ def _env_nvidia_fields() -> bool:
         return True
     if choice == "none":
         return False
-    raise ValueError(f"EMBED_EXTRA_PARAMS must be 'nvidia' or 'none', got {raw!r}.")
+    raise EmbeddingConfigError(
+        f"EMBED_EXTRA_PARAMS must be 'nvidia' or 'none', got {raw!r}."
+    )
 
 
 @dataclass(frozen=True)

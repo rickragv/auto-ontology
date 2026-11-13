@@ -5,9 +5,10 @@
 ``VectorSizeMismatchError`` says which sizes differ and how to rebuild. On the
 question path the vector searches, the extra-table retrieval and the node
 wrapper all log other errors and carry on with no candidates, so a mismatch
-cost minutes and ended in an unrelated answer. They must let this one through:
-the run then stops at the first search, and the client gets the message. Every
-other error keeps its old handling.
+cost minutes and ended in an unrelated answer. They must let this one through,
+and any other ``EmbeddingConfigError`` (its base class, also raised for an
+invalid ``EMBED_*`` setting): the run then stops at the first search, and the
+client gets the message. Every other error keeps its old handling.
 
 No database or network: collaborators are stubbed, and where the real guard
 runs it is a real ``PostgresVDB`` with its catalog lookup and store stubbed.
@@ -46,7 +47,12 @@ from auto_ontology.retrieval.text_to_sql.state import AgentState, TextToSQLPaylo
 from auto_ontology.utils import llm_invoke
 from auto_ontology.utils.embedding import EmbedParams
 from auto_ontology.utils.retriever import Retriever
-from auto_ontology.vdb.dimensions import VectorSizeMismatchError, check_vector_size
+from auto_ontology.vdb.dimensions import (
+    EmbeddingConfigError,
+    VectorSizeMismatchError,
+    check_vector_size,
+    configured_embed_dimensions,
+)
 from auto_ontology.vdb.postgres import PostgresVDB
 
 _CONFIGURED = 768
@@ -58,6 +64,20 @@ def _mismatch() -> VectorSizeMismatchError:
     """The error the guard raises for a 1024-dimension table opened at 768."""
     with pytest.raises(VectorSizeMismatchError) as excinfo:
         check_vector_size("vdb", "semantic_layer", _STORED, _CONFIGURED)
+    return excinfo.value
+
+
+@pytest.fixture(params=["size mismatch", "bad setting"])
+def permanent(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> EmbeddingConfigError:
+    """An error every later search would raise again."""
+    if request.param == "size mismatch":
+        return _mismatch()
+    monkeypatch.setenv("EMBED_DIMENSIONS", "abc")
+    with pytest.raises(EmbeddingConfigError) as excinfo:
+        configured_embed_dimensions()
+    monkeypatch.delenv("EMBED_DIMENSIONS")
     return excinfo.value
 
 
@@ -130,13 +150,13 @@ def mismatched_retriever(
 # ---------------------------------------------------------------------------
 
 
-def test_candidate_search_lets_a_size_mismatch_through(
-    monkeypatch: pytest.MonkeyPatch,
+def test_candidate_search_lets_a_permanent_error_through(
+    monkeypatch: pytest.MonkeyPatch, permanent: EmbeddingConfigError
 ) -> None:
-    error = _mismatch()
+    error = permanent
     monkeypatch.setattr(candidates_retrieval, "search_semantic_index", _raiser(error))
 
-    with pytest.raises(VectorSizeMismatchError) as excinfo:
+    with pytest.raises(EmbeddingConfigError) as excinfo:
         candidates_retrieval._search_by_label(object(), "revenue", "ColumnAttribute", 2)
 
     assert excinfo.value is error
@@ -165,13 +185,13 @@ def test_candidate_search_still_returns_nothing_on_other_errors(
 # ---------------------------------------------------------------------------
 
 
-def test_table_search_lets_a_size_mismatch_through(
-    monkeypatch: pytest.MonkeyPatch,
+def test_table_search_lets_a_permanent_error_through(
+    monkeypatch: pytest.MonkeyPatch, permanent: EmbeddingConfigError
 ) -> None:
-    error = _mismatch()
+    error = permanent
     monkeypatch.setattr(relevant_tables, "search_semantic_index", _raiser(error))
 
-    with pytest.raises(VectorSizeMismatchError) as excinfo:
+    with pytest.raises(EmbeddingConfigError) as excinfo:
         relevant_tables.get_relevant_tables(object(), "orders")
 
     assert excinfo.value is error
@@ -198,13 +218,13 @@ def test_table_search_still_returns_nothing_on_other_errors(
 # ---------------------------------------------------------------------------
 
 
-def test_extra_table_search_lets_a_size_mismatch_through(
-    monkeypatch: pytest.MonkeyPatch,
+def test_extra_table_search_lets_a_permanent_error_through(
+    monkeypatch: pytest.MonkeyPatch, permanent: EmbeddingConfigError
 ) -> None:
-    error = _mismatch()
+    error = permanent
     monkeypatch.setattr(candidates_preparation, "get_relevant_tables", _raiser(error))
 
-    with pytest.raises(VectorSizeMismatchError) as excinfo:
+    with pytest.raises(EmbeddingConfigError) as excinfo:
         CandidatePreparationAgent()._retrieve_additional_tables(
             object(), "q", ["e1"], "db"
         )
@@ -278,12 +298,12 @@ def preparation(monkeypatch: pytest.MonkeyPatch) -> Callable[[BaseException], An
     return run
 
 
-def test_preparation_lets_a_size_mismatch_through(
-    preparation: Callable[[BaseException], Any],
+def test_preparation_lets_a_permanent_error_through(
+    preparation: Callable[[BaseException], Any], permanent: EmbeddingConfigError
 ) -> None:
-    error = _mismatch()
+    error = permanent
 
-    with pytest.raises(VectorSizeMismatchError) as excinfo:
+    with pytest.raises(EmbeddingConfigError) as excinfo:
         preparation(error)
 
     assert excinfo.value is error
@@ -316,13 +336,13 @@ class _RaisingAgent(BaseAgent):
 
 
 @pytest.mark.parametrize("failure_decision", [None, "unconstructable"])
-def test_node_wrapper_lets_a_size_mismatch_through(
-    failure_decision: str | None,
+def test_node_wrapper_lets_a_permanent_error_through(
+    failure_decision: str | None, permanent: EmbeddingConfigError
 ) -> None:
-    error = _mismatch()
+    error = permanent
     wrapped = agent_wrapper(_RaisingAgent(error, failure_decision))
 
-    with pytest.raises(VectorSizeMismatchError) as excinfo:
+    with pytest.raises(EmbeddingConfigError) as excinfo:
         wrapped(cast(AgentState, {"path_state": {}}))
 
     assert excinfo.value is error

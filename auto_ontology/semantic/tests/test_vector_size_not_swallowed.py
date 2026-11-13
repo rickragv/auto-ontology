@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
-"""A vector table of another size fails compilation and saves visibly.
+"""A vector table of another size, or a bad embedding setting, fails visibly.
 
-``VectorSizeMismatchError`` says which sizes differ and how to rebuild. The
-broad handlers on the compilation and save paths log other errors and carry on;
-they must let this one through, or the catalog fills with rows that have no
-vector and nothing reports it. Every other error keeps its old handling.
+``VectorSizeMismatchError`` says which sizes differ and how to rebuild; an
+invalid ``EMBED_*`` value raises an ``EmbeddingConfigError``, its base class,
+naming the setting. The broad handlers on the compilation and save paths log
+other errors and carry on; they must let these through, or the catalog fills
+with rows that have no vector and nothing reports it. Every other error keeps
+its old handling.
 
 No database or network: collaborators are stubbed, and where the real guard
 runs it is a real ``PostgresVDB`` with its catalog lookup and store stubbed.
@@ -20,6 +22,7 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
+import auto_ontology.vdb as vdb_pkg
 import auto_ontology.vdb.postgres as postgres_module
 from auto_ontology.catalog.constants import Labels
 from auto_ontology.semantic import bridge_tables, pipeline, sql_attribute_suggester
@@ -29,7 +32,11 @@ from auto_ontology.server.sql_attributes import service as sql_attr_service
 from auto_ontology.server.terms import router as terms_router
 from auto_ontology.utils import embedding as embedding_module
 from auto_ontology.utils.embedding import EmbedParams
-from auto_ontology.vdb.dimensions import VectorSizeMismatchError, check_vector_size
+from auto_ontology.vdb.dimensions import (
+    EmbeddingConfigError,
+    VectorSizeMismatchError,
+    check_vector_size,
+)
 from auto_ontology.vdb.postgres import PostgresVDB
 
 _CONFIGURED = 768
@@ -40,6 +47,20 @@ def _mismatch() -> VectorSizeMismatchError:
     """The error the guard raises for a 1024-dimension table opened at 768."""
     with pytest.raises(VectorSizeMismatchError) as excinfo:
         check_vector_size("vdb", "semantic_layer", _STORED, _CONFIGURED)
+    return excinfo.value
+
+
+@pytest.fixture(params=["size mismatch", "bad setting"])
+def permanent(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> EmbeddingConfigError:
+    """An error every later embed, write or search would raise again."""
+    if request.param == "size mismatch":
+        return _mismatch()
+    monkeypatch.setenv("EMBED_BATCH_SIZE", "0")
+    with pytest.raises(EmbeddingConfigError) as excinfo:
+        _params()
+    monkeypatch.delenv("EMBED_BATCH_SIZE")
     return excinfo.value
 
 
@@ -172,11 +193,13 @@ def suggester(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return create
 
 
-def test_suggester_lets_a_size_mismatch_through(suggester: MagicMock) -> None:
-    error = _mismatch()
+def test_suggester_lets_a_permanent_error_through(
+    suggester: MagicMock, permanent: EmbeddingConfigError
+) -> None:
+    error = permanent
     suggester.side_effect = error
 
-    with pytest.raises(VectorSizeMismatchError) as excinfo:
+    with pytest.raises(EmbeddingConfigError) as excinfo:
         sql_attribute_suggester.suggest_sql_attributes("warehouse")
 
     assert excinfo.value is error
@@ -252,11 +275,13 @@ def bridge(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return create
 
 
-def test_bridge_stops_on_a_size_mismatch(bridge: MagicMock) -> None:
-    error = _mismatch()
+def test_bridge_stops_on_a_permanent_error(
+    bridge: MagicMock, permanent: EmbeddingConfigError
+) -> None:
+    error = permanent
     bridge.side_effect = error
 
-    with pytest.raises(VectorSizeMismatchError) as excinfo:
+    with pytest.raises(EmbeddingConfigError) as excinfo:
         bridge_tables.build_bridge_tables_sql_attributes("warehouse")
 
     assert excinfo.value is error
@@ -362,10 +387,10 @@ def term_patch(monkeypatch: pytest.MonkeyPatch) -> Callable[[BaseException], Any
     return run
 
 
-def test_term_save_answers_422_with_the_message_on_a_size_mismatch(
-    term_patch: Callable[[BaseException], Any],
+def test_term_save_answers_422_with_the_message_on_a_permanent_error(
+    term_patch: Callable[[BaseException], Any], permanent: EmbeddingConfigError
 ) -> None:
-    error = _mismatch()
+    error = permanent
 
     with pytest.raises(HTTPException) as excinfo:
         term_patch(error)
@@ -373,6 +398,53 @@ def test_term_save_answers_422_with_the_message_on_a_size_mismatch(
     assert excinfo.value.status_code == 422
     assert excinfo.value.detail == str(error)
     assert excinfo.value.__cause__ is error
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("EMBED_BATCH_SIZE", "0"),
+        ("EMBED_MAX_CONCURRENT", "many"),
+        ("EMBED_EXTRA_PARAMS", "nvdia"),
+        ("EMBED_DIMENSIONS", "abc"),
+    ],
+)
+def test_term_save_answers_422_for_a_bad_embedding_setting(
+    monkeypatch: pytest.MonkeyPatch, name: str, value: str
+) -> None:
+    """Through the real re-embed: the setting is read before any vector is touched."""
+    monkeypatch.setattr(terms_router, "edit_subject", lambda term_id: None)
+    monkeypatch.setattr(terms_router, "resolve_internal_user", lambda *a, **kw: None)
+    dal = terms_router.terms_dal
+    monkeypatch.setattr(
+        dal,
+        "update_term",
+        lambda term_id, **kw: {"id": term_id, "name": "Order", "old_name": "Order"},
+    )
+    monkeypatch.setattr(dal, "get_term_certification", lambda term_id: None)
+    monkeypatch.setattr(
+        dal,
+        "fetch_term_and_column_attributes_for_embedding",
+        lambda term_id: ({"id": term_id, "name": "Order"}, []),
+    )
+    monkeypatch.setattr(
+        vdb_pkg, "get_postgres_connection_string", lambda: "postgresql://x/y"
+    )
+    store = MagicMock(name="PostgresVDB")
+    monkeypatch.setattr(vdb_pkg, "PostgresVDB", store)
+    monkeypatch.setenv("EMBED_API_KEY", "test-key")
+    monkeypatch.setenv(name, value)
+
+    with pytest.raises(HTTPException) as excinfo:
+        terms_router.update_term(
+            MagicMock(name="request"), "t1", terms_router.TermUpdate(description="d")
+        )
+
+    assert excinfo.value.status_code == 422
+    assert name in excinfo.value.detail
+    assert repr(value) in excinfo.value.detail
+    assert isinstance(excinfo.value.__cause__, EmbeddingConfigError)
+    store.assert_not_called()
 
 
 def test_term_save_still_succeeds_when_the_re_embed_fails_otherwise(
@@ -417,12 +489,12 @@ def column_patch(monkeypatch: pytest.MonkeyPatch) -> Callable[[BaseException], A
     return run
 
 
-def test_column_save_lets_a_size_mismatch_through(
-    column_patch: Callable[[BaseException], Any],
+def test_column_save_lets_a_permanent_error_through(
+    column_patch: Callable[[BaseException], Any], permanent: EmbeddingConfigError
 ) -> None:
-    error = _mismatch()
+    error = permanent
 
-    with pytest.raises(VectorSizeMismatchError) as excinfo:
+    with pytest.raises(EmbeddingConfigError) as excinfo:
         column_patch(error)
 
     assert excinfo.value is error

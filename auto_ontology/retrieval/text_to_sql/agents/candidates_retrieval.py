@@ -48,7 +48,7 @@ from auto_ontology.retrieval.text_to_sql.state import (
     AgentState,
     get_question_for_processing,
 )
-from auto_ontology.vdb.dimensions import VectorSizeMismatchError
+from auto_ontology.vdb.dimensions import EmbeddingConfigError
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ def _search_by_label(
                 database_name=database_name,
             )
         )
-    except VectorSizeMismatchError:
+    except EmbeddingConfigError:
         raise
     except Exception:
         logger.warning("%s search failed for entity %r", label, entity, exc_info=True)

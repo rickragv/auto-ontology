@@ -45,7 +45,17 @@ _LOOKUP_SQL = """
 """
 
 
-class VectorSizeMismatchError(ValueError):
+class EmbeddingConfigError(ValueError):
+    """An embedding setting is invalid, or does not fit the vector tables.
+
+    Every later embed, write or search fails the same way and retrying cannot
+    help, so the broad handlers on the compile, question and save paths let it
+    through instead of logging it and carrying on. A ``ValueError``, so the
+    routes that answer one with 422 answer this the same way.
+    """
+
+
+class VectorSizeMismatchError(EmbeddingConfigError):
     """An existing vector table holds embeddings of a different size."""
 
 
@@ -53,8 +63,8 @@ def configured_embed_dimensions() -> int | None:
     """The ``EMBED_DIMENSIONS`` setting, or ``None`` when it is unset or empty.
 
     Read on every call, not at import, so a changed environment is honoured.
-    Raises :class:`ValueError` when the value is not a whole number, is below 1,
-    or is above :data:`MAX_INDEXED_DIMENSIONS`.
+    Raises :class:`EmbeddingConfigError` when the value is not a whole number,
+    is below 1, or is above :data:`MAX_INDEXED_DIMENSIONS`.
     """
     raw = os.environ.get(EMBED_DIMENSIONS_ENV, "").strip()
     if not raw:
@@ -62,13 +72,15 @@ def configured_embed_dimensions() -> int | None:
     try:
         value = int(raw)
     except ValueError:
-        raise ValueError(
+        raise EmbeddingConfigError(
             f"{EMBED_DIMENSIONS_ENV} must be a whole number of dimensions, got {raw!r}."
         ) from None
     if value < 1:
-        raise ValueError(f"{EMBED_DIMENSIONS_ENV} must be at least 1, got {raw!r}.")
+        raise EmbeddingConfigError(
+            f"{EMBED_DIMENSIONS_ENV} must be at least 1, got {raw!r}."
+        )
     if value > MAX_INDEXED_DIMENSIONS:
-        raise ValueError(
+        raise EmbeddingConfigError(
             f"{EMBED_DIMENSIONS_ENV} must be at most {MAX_INDEXED_DIMENSIONS}, "
             f"got {raw!r}: pgvector cannot build an HNSW index on a halfvec "
             f"column wider than {MAX_INDEXED_DIMENSIONS} dimensions, so every "

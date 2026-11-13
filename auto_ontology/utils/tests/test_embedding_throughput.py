@@ -27,6 +27,7 @@ from auto_ontology.utils.embedding import (
     embed_texts,
     get_embed_params,
 )
+from auto_ontology.vdb.dimensions import EmbeddingConfigError
 
 BATCH_VAR = "EMBED_BATCH_SIZE"
 CONCURRENT_VAR = "EMBED_MAX_CONCURRENT"
@@ -253,7 +254,7 @@ def test_a_bad_value_is_rejected_naming_the_variable_and_the_value(
 ) -> None:
     monkeypatch.setenv(name, bad)
 
-    with pytest.raises(ValueError) as caught:
+    with pytest.raises(EmbeddingConfigError) as caught:
         _params()
 
     assert name in str(caught.value)

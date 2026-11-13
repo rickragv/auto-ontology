@@ -26,7 +26,7 @@ from auto_ontology.server.responses import (
     TermResponse,
     TermsPageResponse,
 )
-from auto_ontology.vdb.dimensions import VectorSizeMismatchError
+from auto_ontology.vdb.dimensions import EmbeddingConfigError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -252,7 +252,7 @@ def update_term(request: Request, term_id: str, body: TermUpdate) -> dict:
             term_service.refresh_term_embeddings(
                 term_id, refresh_dependent_attrs=name_changed
             )
-        except VectorSizeMismatchError as exc:
+        except EmbeddingConfigError as exc:
             # 422 with the message, as the column-attribute patch answers it.
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         except Exception:

@@ -19,6 +19,7 @@ import pytest
 import auto_ontology.vdb as vdb_pkg
 import auto_ontology.vdb.postgres as postgres_module
 from auto_ontology.vdb.dimensions import (
+    EmbeddingConfigError,
     VectorSizeMismatchError,
     check_vector_size,
     configured_embed_dimensions,
@@ -64,7 +65,7 @@ def test_invalid_values_name_the_variable_and_the_value(
     monkeypatch: pytest.MonkeyPatch, raw: str
 ) -> None:
     monkeypatch.setenv(_ENV, raw)
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(EmbeddingConfigError) as excinfo:
         configured_embed_dimensions()
     assert _ENV in str(excinfo.value)
     assert repr(raw) in str(excinfo.value)
@@ -96,6 +97,9 @@ def test_sizes_that_agree_or_are_unknown_pass(
 def test_differing_sizes_raise_an_explanatory_error() -> None:
     with pytest.raises(VectorSizeMismatchError) as excinfo:
         check_vector_size("vdb", "tbl", 1024, 768)
+    # Its base class is what the broad handlers let through, and a ValueError
+    # is what the save routes answer with 422.
+    assert isinstance(excinfo.value, EmbeddingConfigError)
     assert isinstance(excinfo.value, ValueError)
     message = str(excinfo.value)
     assert "vdb.tbl" in message
@@ -139,7 +143,7 @@ def test_a_bad_setting_stops_before_the_store_is_built(
     monkeypatch: pytest.MonkeyPatch, recorder: MagicMock
 ) -> None:
     monkeypatch.setenv(_ENV, "nope")
-    with pytest.raises(ValueError, match=_ENV):
+    with pytest.raises(EmbeddingConfigError, match=_ENV):
         vdb_pkg.get_vdb()
     recorder.assert_not_called()
 

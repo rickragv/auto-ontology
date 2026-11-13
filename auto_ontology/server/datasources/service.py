@@ -36,7 +36,7 @@ from auto_ontology.dal.terms import (
 from auto_ontology.semantic.embed import build_semantic_embedder
 from auto_ontology.utils.column_types import sample_values_edit_error
 from auto_ontology.utils.sample_values import stringify_sample_values
-from auto_ontology.vdb.dimensions import VectorSizeMismatchError
+from auto_ontology.vdb.dimensions import EmbeddingConfigError
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ def update_node_properties(
     if patched["label"] == Labels.COLUMN and "sample_values" in properties:
         try:
             _refresh_semantic_column_attribute_embeddings(node_id)
-        except VectorSizeMismatchError:
+        except EmbeddingConfigError:
             # A ValueError: both callers answer it as 422 with the message.
             raise
         except Exception:
