@@ -471,6 +471,26 @@ Settle each by measurement, then record the answer here.
    failing vector write, so the row in flight is left without a vector. A model whose
    output size differs from the table raises pgvector's own error, which is still
    swallowed.
+   **Run live 2026-11-13** on a throwaway copy of the run 1 database (Ollama, `bge-m3`,
+   1024 to 512, project `aomm`, since removed). With the sizes disagreeing: startup
+   ingest and compilation failed with the message and changed no rows (63 / 55 vectors
+   kept); Term, column-attribute and sample-values saves answered 422, with the catalog
+   text already written. Recovery option 2 worked as documented: both tables recreated
+   as `halfvec(512)`, 63 data rows, 0 semantic rows; re-saving one Term and one
+   attribute restored 2 vectors; reset recompiled 8 / 47 / 8 in 112 s; the reference
+   question was right in 46 s (1 ask). Two things the run added:
+   - `EMBED_DIMENSIONS` is not sent to the model. With the model still returning 1024,
+     the ingest failed on pgvector's `expected 512 dimensions, not 1024` (visible in the
+     ingest log, not swallowed there). LiteLLM drops `dimensions` for an Ollama model on
+     the `openai/` route unless `allowed_openai_params: ["dimensions"]` is set.
+   - A question asked during a mismatch did not fail: two search handlers and
+     `agent_wrapper` swallowed the error and the pipeline ran on empty results (over
+     110 s, cut off). **Fixed:** five handlers in `retrieval/` now let
+     `VectorSizeMismatchError` through (15 inserted lines, 4 upstream files); the chat
+     stream ends with an error event carrying the message and
+     `POST /api/question-entity-coverage` answers 422. 14 tests, no database; live, the
+     same question stopped in 21.2 s with the message. Still swallowed, on paths no
+     route serves: `sql_reconstruction.py`, `interactive/entity_resolution.py`.
 7. (Raised by A1.) With a dimension mismatch, deleting one datasource fails in
    `delete_by_database` after the catalog transaction has committed.
    **Fixed 2026-11-12 (`99406a20`).** Confirmed: the user got HTTP 200, the catalog rows

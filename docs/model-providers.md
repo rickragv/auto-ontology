@@ -76,6 +76,9 @@ Details:
 - **Deleting a datasource after a mismatch.** Deletes are not blocked by the size check,
   so a datasource can still be removed while the setting and the tables disagree. Writes
   and searches raise the error.
+- **Asking a question after a mismatch.** The run stops at its first search and the
+  answer is the error message. Checked live: 21 s to the error, where the same question
+  previously ran past 110 s on empty search results.
 - **Embedding concurrency.** `EMBED_MAX_CONCURRENT` limits requests in flight per
   embedding call, not per process. Two ingests running at once each get their own pool,
   so the total can be higher than the setting.
@@ -100,10 +103,16 @@ with, and use the model that produced those vectors.
 
 **Option 2, rebuild at the new size.**
 
-1. Stop the backend and the ingestion service. Do not let a compilation pass run while
-   the settings and the tables disagree: it stores Terms and SQL attributes without
-   vectors, and later passes skip those tables.
-2. Set the new `EMBED_MODEL` and `EMBED_DIMENSIONS`.
+1. Stop the backend and the ingestion service. While the setting and the tables
+   disagree, the scheduled ingest and compilation fail with the error and change
+   nothing. A Term, attribute or sample-values save answers HTTP 422 with the error, but
+   the edited text is already stored; its vector is not.
+2. Set the new `EMBED_MODEL` and `EMBED_DIMENSIONS`. The model must really return that
+   size: `EMBED_DIMENSIONS` sizes the tables and is not sent with the request. If the two
+   differ, the ingest fails with pgvector's `expected N dimensions, not M`. To shorten a
+   model's output, set `dimensions` on the model in the gateway config. For an Ollama
+   model behind the `openai/` route also add `allowed_openai_params: ["dimensions"]`, or
+   the gateway drops the field without a message.
 3. Drop both vector tables. This removes only embeddings:
    `DROP TABLE IF EXISTS vdb.data_objects_layer, vdb.semantic_layer;`
 4. Start the services. The startup ingest recreates `vdb.data_objects_layer` at the new
@@ -120,8 +129,13 @@ with, and use the model that produced those vectors.
      users wrote: edits to Terms and attributes, manual SQL attributes, custom analyses
      and predictive analyses, in every database.
 
-This procedure comes from reading the code and one probe of the compilation work list. A
-full drop and rebuild has not been run end to end.
+Run end to end once, on 2026-11-13, on a copy of the run 1 database with Ollama
+(`bge-m3`, 1024 to 512): the ingest, the compilation and three kinds of save all reported
+the error; after the drop both tables came back as `halfvec(512)` with 63 data rows and no
+semantic rows; re-saving one Term and one column attribute restored their two vectors;
+the reset rebuilt 8 Terms, 47 column attributes and 8 joins in 112 s, and the reference
+question was answered correctly. SQL attributes, custom analyses and predictive analyses
+were not part of that database, so their re-save path was not exercised.
 
 ## The gateway
 
