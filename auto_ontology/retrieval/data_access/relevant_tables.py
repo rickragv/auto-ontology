@@ -24,6 +24,7 @@ from auto_ontology.catalog.constants import Labels
 from auto_ontology.retrieval.data_access.semantic_search import (
     search_semantic_index,
 )
+from auto_ontology.vdb.dimensions import VectorSizeMismatchError
 
 if TYPE_CHECKING:
     from auto_ontology.utils.retriever import Retriever
@@ -269,6 +270,8 @@ def get_relevant_tables(
             database_name=database_name,
             schema_name=schema_name,
         )
+    except VectorSizeMismatchError:
+        raise
     except Exception:
         logger.exception("get_relevant_tables: vector search failed")
         raw_rows = []

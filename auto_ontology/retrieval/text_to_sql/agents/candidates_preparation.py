@@ -75,6 +75,7 @@ from auto_ontology.retrieval.text_to_sql.value_anchors import (
     split_schema_named_anchors,
 )
 from auto_ontology.utils.llm_invoke import invoke_with_structured_output
+from auto_ontology.vdb.dimensions import VectorSizeMismatchError
 
 
 def _qualified_name(t: dict) -> str:
@@ -485,6 +486,8 @@ class CandidatePreparationAgent(BaseAgent):
             additional_tables: list[dict] = []
             try:
                 additional_tables = extra_future.result()
+            except VectorSizeMismatchError:
+                raise
             except Exception:
                 self.logger.warning("Additional table retrieval failed", exc_info=True)
         finally:
@@ -910,6 +913,8 @@ class CandidatePreparationAgent(BaseAgent):
             for future, query in futures.items():
                 try:
                     additional_tables.extend(future.result())
+                except VectorSizeMismatchError:
+                    raise
                 except Exception:
                     self.logger.warning(
                         "Table retrieval failed for query: %s", query, exc_info=True

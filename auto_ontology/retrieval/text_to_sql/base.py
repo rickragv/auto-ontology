@@ -21,6 +21,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 from auto_ontology.retrieval.text_to_sql.state import AgentState
+from auto_ontology.vdb.dimensions import VectorSizeMismatchError
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +242,9 @@ def agent_wrapper(agent: BaseAgent):
             if agent.failure_decision is None:
                 raise
             return agent.handle_error(e, state)
+        except VectorSizeMismatchError:
+            # Every later search fails the same way: end the run with its message.
+            raise
         except Exception as e:
             return agent.handle_error(e, state)
 
