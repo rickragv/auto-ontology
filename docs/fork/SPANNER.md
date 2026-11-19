@@ -54,4 +54,77 @@ Each step is committed and pushed to `spanner-connector` when its check has run.
 
 ## Results
 
-To be filled in as steps finish.
+### Steps 2 and 3: connector and emulator tests (2026-11-19)
+
+Commits `11e4c58c`, `5d040b29`, `5a5ac18d`. Upstream files touched: `registry.py` +2,
+`connectors/__init__.py` +2, `pyproject.toml` +1, `uv.lock` (18 new packages).
+
+- `uv run pytest auto_ontology/connectors -q`: 436 passed, 11 skipped, 1 error (before:
+  329 / 11 / 1; the error is upstream's SQLite test on a Windows path). The emulator
+  tests are not collected without `AUTO_ONTOLOGY_LIVE_SPANNER=1`, so the skip count did
+  not change. With the flag: 134 passed.
+- Ruff clean, OpenAPI unchanged, `uv lock --check` clean.
+- Emulator targeting: `AnonymousCredentials` plus `client_options.api_endpoint`, per
+  client. `SPANNER_EMULATOR_HOST` is not needed. Because the library lets that variable
+  override the client, the connector refuses it when it is set and the URL does not name
+  the same emulator.
+- The emulator supports named schemas, views, JSON, ARRAY, interleaving and
+  PostgreSQL-dialect databases (created one; the connector refuses it).
+- sqlglot's re-quoting was run on 12 GoogleSQL statements; every rewrite
+  (`INTERVAL '90' DAY`, `CAST('…' AS DATE)`, `NOT x IS NULL`, bare `CURRENT_DATE`) was
+  accepted by the emulator.
+
+Added beyond the plan:
+
+- A guard against a lost server. The Google client retries `UNAVAILABLE` forever. Each
+  statement runs on a worker thread; if the gRPC channel is not ready for 30 s the
+  transport is closed and "Could not connect to Spanner at …" is raised. It depends on
+  library internals (`transport.grpc_channel`), and would also end a real outage longer
+  than 30 s.
+- Built-in client metrics are switched off, so no process-wide OpenTelemetry provider is
+  installed.
+- A multi-column foreign key that points at a unique index, not a primary key, is left
+  out with a warning: the emulator reports its column positions in the wrong order.
+- The database qualifier is not stripped when the statement also uses the database id
+  as an alias, CTE or column name.
+
+### Step 4: through the stack on the emulator (2026-11-19)
+
+Separate compose project `aospan` (own Postgres volume), Ollama preset
+(`qwen3.5:9b`, `bge-m3`), connection
+`spanner://auto-ontology/auto-ontology/music?emulator_host=host.docker.internal:9010`.
+
+| Step | Result |
+|---|---|
+| Ingest | 9.3 s. 7 of 7 tables (one view, one in a named schema), 35 of 35 columns, 9 of 9 key columns, 7 of 7 foreign-key rows including the interleaved one. No errors or warnings. |
+| Compile | Ready in 125 s. 7 terms, 28 column attributes, 7 joins, 0 SQL attributes. Sample values on 29 of 35 columns (the other 6 are date and timestamp columns, skipped by design). |
+| Question 1, average album price per singer (interleaved join) | Correct, 72 s, one pass. |
+| Question 2, tickets sold in Seattle | Correct, 37 s, one pass. |
+| Question 3, tickets sold in Portland | Wrong (6, expected 3): the model joined `Concerts` on `VenueId` alone. The SQL ran. |
+| Emulator stopped | Clear error after 30 s, classed as infrastructure, no SQL repair. The shared pipeline restarts once, so the request took 152 s. Catalog untouched by a failed re-ingest. |
+| Emulator back | Next question and re-ingest worked without restarting any service. |
+
+- No Postgres-only syntax in any generated statement, and Spanner rejected none for how
+  names were written. The model wrote the qualifier three ways and all were stripped.
+  No dialect rule was added.
+- Single asks on a 9B local model; not a measure of answer quality.
+
+### Found in shared code, not changed
+
+- `semantic/semantic_fk.py:194-217`: a declared foreign key whose target column is
+  itself a foreign-key column goes to model inference and loses its declared target.
+  The three-column `TicketSales → Concerts` key was reduced to one column. Composite and
+  interleaved keys are common in Spanner, so this matters more here.
+- `retrieval/text_to_sql/main.py:290-301`: the whole pipeline is retried even after an
+  infrastructure failure, which doubles the time to the error.
+- `semantic/visit_enter.py:74`: `ARRAY<STRING(n)>` counts as a text type, so profiling
+  can run `SELECT DISTINCT` on an array column, which Spanner rejects. The failure is
+  caught. It did not happen in this run.
+- `formatters_util.py:65`: a column type containing `json` gets Postgres JSONB hints.
+  The model did not use them in this run.
+
+### Not tested
+
+- Real Cloud Spanner: credentials, IAM, latency, session pool, query limits.
+- More than three questions; any model other than `qwen3.5:9b`.
+- Large schemas, and schemas with many named schemas.
