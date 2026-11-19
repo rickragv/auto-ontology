@@ -485,11 +485,56 @@ steps 1 and 2 of the [Quickstart](#quickstart) first, leaving
    the Ollama model name:
 
    ```bash
-   curl http://127.0.0.1:4000/v1/chat/completions      -H "Authorization: Bearer $LITELLM_MASTER_KEY"      -H "Content-Type: application/json"      -d '{"model": "ao-chat", "messages": [{"role": "user", "content": "Say ok"}]}'
+   curl http://127.0.0.1:4000/v1/chat/completions \
+     -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"model": "ao-chat", "messages": [{"role": "user", "content": "Say ok"}]}'
    ```
 
-Then continue the Quickstart from step 4. For Gemini, use
-`deploy/litellm/env.gemini.example` and set `GEMINI_API_KEY`.
+Then continue the Quickstart from step 4.
+
+**Example: run the stack on Gemini.** Nothing runs locally, but prompts,
+schema details and catalog text go to Google. Do steps 1 and 2 of the
+Quickstart first, as above.
+
+1. Create an API key at <https://aistudio.google.com/apikey>.
+
+2. In `.env`, replace the model settings from `.env.example` with the lines
+   from
+   [`deploy/litellm/env.gemini.example`](./deploy/litellm/env.gemini.example).
+   The main ones:
+
+   ```dotenv
+   LITELLM_PRESET=gemini
+   LITELLM_MASTER_KEY=<output of: echo "sk-$(openssl rand -hex 32)">
+   GEMINI_API_KEY=<your Gemini key>
+
+   REASONING_ENDPOINT=http://litellm:4000/v1
+   REASONING_API_KEY=${LITELLM_MASTER_KEY}
+   REASONING_MODEL=ao-chat
+   REASONING_CLIENT=openai
+
+   EMBED_ENDPOINT=http://litellm:4000/v1
+   EMBED_API_KEY=${LITELLM_MASTER_KEY}
+   EMBED_MODEL=ao-embed
+   EMBED_DIMENSIONS=768
+
+   RERANK_ENDPOINT=disabled
+   ```
+
+   `ao-chat` is `gemini-3.8-flash` and `ao-embed` is `gemini-embedding-001`
+   at 768 dimensions; both are set in
+   [`deploy/litellm/gemini.yaml`](./deploy/litellm/gemini.yaml). The example
+   file also lowers concurrency and batch size for the free tier
+   (`LLM_MAX_INFLIGHT`, `EMBED_BATCH_SIZE` and two more). On a paid key,
+   remove those lines.
+
+3. Start the gateway and the stack with the same two commands as in the Ollama
+   example, then run the same `curl` check. The backend never sees the Gemini
+   key; only the gateway reads it.
+
+This preset has had one small run on a paid key: one ingest, one compile and
+one question. Free-tier behaviour is not tested.
 
 Changing the embedding model or its size on a database that already has
 vectors needs a re-ingest. The settings, the other presets, adding a
