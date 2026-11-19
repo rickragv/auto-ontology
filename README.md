@@ -424,10 +424,76 @@ variable.
 
 #### Other model providers (fork)
 
-This fork can run on other providers through an optional LiteLLM gateway. An
-Ollama preset is included and tested; Gemini and mixed presets have had one
-sanity run each. Setup, the new
-settings, and what was and was not tested are in
+This fork can run on other providers through an optional
+[LiteLLM](https://docs.litellm.ai) gateway: one OpenAI-compatible endpoint in
+front of Ollama, Gemini, or any provider LiteLLM supports. The gateway is a
+separate Compose file, and every setting the fork adds is optional. With none
+set, the stack behaves as upstream does on NVIDIA endpoints.
+
+| Preset   | Chat                  | Embeddings                   | Tested                          |
+| -------- | --------------------- | ---------------------------- | ------------------------------- |
+| `ollama` | `qwen3.5:9b` (local)  | `bge-m3` (local, 1024)       | Full ingest, compile, questions |
+| `gemini` | `gemini-3.8-flash`    | `gemini-embedding-001` (768) | One sanity run                  |
+| `mixed`  | `qwen3.5:9b` (local)  | `gemini-embedding-001` (768) | One sanity run                  |
+
+**Example: run the stack on local Ollama models, with no NVIDIA key.** Do
+steps 1 and 2 of the [Quickstart](#quickstart) first, leaving
+`DEFAULT_MODELS_API_KEY` out. The steps below replace its step 3.
+
+1. Pull the models on the host:
+
+   ```bash
+   ollama pull qwen3.5:9b
+   ollama pull bge-m3
+   ```
+
+2. In `.env`, replace the model settings from `.env.example`
+   (`DEFAULT_MODELS_*`, `REASONING_*`, `NON_REASONING_*`, `EMBED_*`,
+   `RERANK_*`) with the lines from
+   [`deploy/litellm/env.ollama.example`](./deploy/litellm/env.ollama.example).
+   The main ones:
+
+   ```dotenv
+   LITELLM_PRESET=ollama
+   LITELLM_MASTER_KEY=<output of: echo "sk-$(openssl rand -hex 32)">
+
+   REASONING_ENDPOINT=http://litellm:4000/v1
+   REASONING_API_KEY=${LITELLM_MASTER_KEY}
+   REASONING_MODEL=ao-chat
+   REASONING_CLIENT=openai
+   LLM_REASONING_EFFORT=none
+
+   EMBED_ENDPOINT=http://litellm:4000/v1
+   EMBED_API_KEY=${LITELLM_MASTER_KEY}
+   EMBED_MODEL=ao-embed
+   EMBED_DIMENSIONS=1024
+
+   RERANK_ENDPOINT=disabled
+   ```
+
+   The example file sets every role in full. A role left unset falls back to
+   an NVIDIA endpoint.
+
+3. Start the gateway, wait until it is healthy, then start the stack:
+
+   ```bash
+   docker compose -f docker-compose.litellm.yml up -d --wait
+   docker compose -f docker-compose.yml -f docker-compose.litellm.yml up -d --build
+   ```
+
+4. Check the gateway from the host. The model name is the gateway alias, not
+   the Ollama model name:
+
+   ```bash
+   curl http://127.0.0.1:4000/v1/chat/completions      -H "Authorization: Bearer $LITELLM_MASTER_KEY"      -H "Content-Type: application/json"      -d '{"model": "ao-chat", "messages": [{"role": "user", "content": "Say ok"}]}'
+   ```
+
+Then continue the Quickstart from step 4. For Gemini, use
+`deploy/litellm/env.gemini.example` and set `GEMINI_API_KEY`.
+
+Changing the embedding model or its size on a database that already has
+vectors needs a re-ingest. The settings, the other presets, adding a
+provider, and what was and was not tested are in
 [docs/model-providers.md](./docs/model-providers.md).
 
 ### Predictions
