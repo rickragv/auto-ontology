@@ -21,10 +21,11 @@ and the verification matrix, is in @docs/fork/PLAN.md.
 - **Never open a pull request against `NVIDIA/auto-ontology`.** They do not accept
   external PRs. `gh` is set to default to the fork; keep it that way and pass
   `--repo rickragv/auto-ontology` on any `gh pr` command. Never push to `upstream`.
-- The fork's `main` is upstream plus the gateway work (fast-forwarded to
-  `litellm-gateway` on 2026-11-19 at the owner's request). Do not commit on it directly.
-  Work on `litellm-gateway` and fast-forward `main` to it when asked; sync with
-  `git fetch upstream` then `git rebase upstream/main`.
+- The fork's `main` is upstream plus the gateway work and the Cloud Spanner connector
+  (fast-forwarded to `litellm-gateway` on 2026-11-19 and to `spanner-connector` on
+  2026-11-20, at the owner's request). Do not commit on it directly. Work on a feature
+  branch and fast-forward `main` to it when asked; sync with `git fetch upstream` then
+  `git rebase upstream/main`.
 - Keep the diff small. One concern per commit. Prefer new files over edits to upstream
   files.
 - Every new setting is optional. With none set, behaviour must match upstream.
