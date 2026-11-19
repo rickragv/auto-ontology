@@ -17,6 +17,7 @@ from auto_ontology.connectors.registry import (
     invalidate_connectors_cache,
 )
 from auto_ontology.connectors.snowflake import SnowflakeDatabase
+from auto_ontology.connectors.spanner import SpannerDatabase
 from auto_ontology.connectors.sqlite import SQLiteDatabase
 from auto_ontology.connectors.trino import TrinoDatabase
 
@@ -30,6 +31,7 @@ __all__ = [
     "MySQLDatabase",
     "PostgresDatabase",
     "SnowflakeDatabase",
+    "SpannerDatabase",
     "SQLiteDatabase",
     "TrinoDatabase",
     "get_connectors",

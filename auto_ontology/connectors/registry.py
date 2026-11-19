@@ -23,6 +23,7 @@ from auto_ontology.connectors.kyuubi import KyuubiDatabase
 from auto_ontology.connectors.mysql import MySQLDatabase
 from auto_ontology.connectors.postgres import PostgresDatabase
 from auto_ontology.connectors.snowflake import SnowflakeDatabase
+from auto_ontology.connectors.spanner import SpannerDatabase
 from auto_ontology.connectors.sqlite import SQLiteDatabase
 from auto_ontology.connectors.trino import TrinoDatabase
 
@@ -48,6 +49,7 @@ CONNECTOR_REGISTRY: dict[str, type[SQLDatabase]] = {
     "databricks": DatabricksDatabase,
     "duckdb": DuckDBDatabase,
     "snowflake": SnowflakeDatabase,
+    "spanner": SpannerDatabase,
     "clickhouse": ClickHouseDatabase,
     "heavydb": HeavyDBDatabase,
     "kyuubi": KyuubiDatabase,
