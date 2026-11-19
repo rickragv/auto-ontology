@@ -514,6 +514,7 @@ Quickstart first, as above.
    REASONING_MODEL=ao-chat
    REASONING_CLIENT=openai
 
+   # Embeddings: Gemini too. ao-embed is gemini-embedding-001 at 768 dimensions.
    EMBED_ENDPOINT=http://litellm:4000/v1
    EMBED_API_KEY=${LITELLM_MASTER_KEY}
    EMBED_MODEL=ao-embed
@@ -522,9 +523,36 @@ Quickstart first, as above.
    RERANK_ENDPOINT=disabled
    ```
 
-   `ao-chat` is `gemini-3.8-flash` and `ao-embed` is `gemini-embedding-001`
-   at 768 dimensions; both are set in
-   [`deploy/litellm/gemini.yaml`](./deploy/litellm/gemini.yaml). The example
+   Chat and embeddings both run on Gemini: `ao-chat` is `gemini-3.8-flash`
+   and `ao-embed` is `gemini-embedding-001` at 768 dimensions. Both are set in
+   [`deploy/litellm/gemini.yaml`](./deploy/litellm/gemini.yaml):
+
+   ```yaml
+   model_list:
+     - model_name: ao-chat
+       litellm_params:
+         model: gemini/gemini-3.8-flash
+         api_key: os.environ/GEMINI_API_KEY
+     - model_name: ao-embed
+       litellm_params:
+         model: gemini/gemini-embedding-001
+         api_key: os.environ/GEMINI_API_KEY
+         task_type: SEMANTIC_SIMILARITY
+         dimensions: 768
+       model_info:
+         mode: embedding
+   ```
+
+   To use the newer `gemini-embedding-2`, change the `ao-embed` model to
+   `gemini/gemini-embedding-2`, remove the `task_type` line, and add
+   `EMBED_EXTRA_PARAMS=none` to `.env`. Without that setting Gemini rejects
+   the request. This variant had one direct embedding check, not a full run.
+
+   To keep chat local and host only the embeddings, use the `mixed` preset
+   ([`deploy/litellm/env.mixed.example`](./deploy/litellm/env.mixed.example)):
+   chat on Ollama, embeddings on Gemini.
+
+   The example
    file also lowers concurrency and batch size for the free tier
    (`LLM_MAX_INFLIGHT`, `EMBED_BATCH_SIZE` and two more). On a paid key,
    remove those lines.
