@@ -160,7 +160,7 @@ _TABLE_TYPES = {"BASE TABLE": TableTypes.BASE_TABLE, "VIEW": TableTypes.VIEW}
 class SpannerError(RuntimeError):
     """An error reported by Spanner, or reaching it.
 
-    Statement errors carry the server's message verbatim, and transport
+    Statement errors read ``<gRPC status>: <the server's message>``, and transport
     failures start with "Could not connect to Spanner", so
     :mod:`auto_ontology.connectors.db_errors` tells "the SQL was wrong" apart
     from "the database is unreachable" the same way it does for every engine.
@@ -535,6 +535,34 @@ def _fetch(database: "Database", sql: str, timeout_s: float | None) -> pd.DataFr
     return pd.DataFrame(rows, columns=columns)
 
 
+def _describe(error: BaseException) -> str:
+    """Return ``STATUS: message`` for a Google API error, ``str(error)`` otherwise.
+
+    ``str()`` of a ``GoogleAPICallError`` ends with the raw ``details`` protos
+    (``[type_url: "type.googleapis.com/googlesql.ErrorMessageModeForPayload"
+    value: "\\010\\002"]``), and the Spanner client appends ``, request_id =
+    ...`` to the message. Neither helps a reader or the SQL-repair prompt, which
+    both receive this text. Spanner's own message, including the statement and
+    caret it echoes, is kept whole. The original exception, request id
+    included, stays chained as ``__cause__``.
+    """
+    from google.api_core import exceptions as api
+
+    if not isinstance(error, api.GoogleAPICallError):
+        return str(error)
+    message = str(error.message)
+    request_id = getattr(error, "request_id", None)
+    if request_id:
+        message = message.removesuffix(f", request_id = {request_id}")
+    if error.grpc_status_code is not None:
+        status = error.grpc_status_code.name
+    elif error.code is not None:
+        status = f"HTTP {error.code}"
+    else:
+        status = type(error).__name__
+    return f"{status}: {message}"
+
+
 class SpannerDatabase(SQLDatabase):
     """Concrete :class:`SQLDatabase` backed by Google Cloud Spanner.
 
@@ -709,22 +737,22 @@ class SpannerDatabase(SQLDatabase):
         if handle.closed.is_set():
             return SpannerError(
                 f"Could not connect to Spanner at {self._endpoint}: the connection "
-                f"was closed while the statement was running ({error})"
+                f"was closed while the statement was running ({_describe(error)})"
             )
         if isinstance(error, api.DeadlineExceeded) and timeout_s is not None:
             return StatementTimeout.since(timeout_s, started)
         if isinstance(error, (api.ServiceUnavailable, api.RetryError)):
             self._abandon(handle)
             return SpannerError(
-                f"Could not connect to Spanner at {self._endpoint}: {error}"
+                f"Could not connect to Spanner at {self._endpoint}: {_describe(error)}"
             )
         if isinstance(error, api.NotFound):
             return SpannerError(
                 f"Spanner could not find {self._path}; check the project, "
-                f"instance and database in the connection string: {error.message}"
+                f"instance and database in the connection string: {_describe(error)}"
             )
         if isinstance(error, api.GoogleAPICallError):
-            return SpannerError(str(error))
+            return SpannerError(_describe(error))
         return error
 
     # ------------------------------------------------------------------

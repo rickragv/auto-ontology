@@ -518,6 +518,61 @@ def test_sql_errors_do_not_read_as_infrastructure(opened: Opened) -> None:
     assert not is_infrastructure_error(raised.value, statement)
 
 
+class _Payload:
+    """Stands in for the protobuf ``details`` the server attaches to an error."""
+
+    def __repr__(self) -> str:
+        return (
+            'type_url: "type.googleapis.com/googlesql.ErrorMessageModeForPayload"\n'
+            'value: "\\010\\002"\n'
+        )
+
+
+def _with_request_id(error: api.GoogleAPICallError) -> api.GoogleAPICallError:
+    """Tag *error* the way the Spanner client does before raising it."""
+    error.request_id = "1.84.1.0.3.1"
+    error.message = f"{error.message}, request_id = 1.84.1.0.3.1"
+    return error
+
+
+def test_statement_errors_read_status_and_server_message(opened: Opened) -> None:
+    server_message = (
+        "Table not found: Nope [at 1:15]\nSELECT * FROM Nope\n              ^"
+    )
+    error = _with_request_id(api.InvalidArgument(server_message, details=[_Payload()]))
+    assert "type_url" in str(error)  # what the connector used to pass on
+    connector = connector_with(opened, {"Nope": error})
+    statement = "SELECT * FROM Nope"
+    with pytest.raises(SpannerError) as raised:
+        connector.execute(statement)
+    assert str(raised.value) == f"INVALID_ARGUMENT: {server_message}"
+    assert raised.value.__cause__ is error
+    assert not is_infrastructure_error(raised.value, statement)
+
+
+def test_an_error_without_a_grpc_status_is_named_by_its_class(
+    opened: Opened,
+) -> None:
+    connector = connector_with(opened, {"odd": api.GoogleAPICallError("odd failure")})
+    with pytest.raises(SpannerError) as raised:
+        connector.execute("SELECT odd")
+    assert str(raised.value) == "GoogleAPICallError: odd failure"
+
+
+def test_missing_database_drops_the_request_id(opened: Opened) -> None:
+    connector = connector_with(
+        opened,
+        responder=lambda sql, db: _with_request_id(
+            api.NotFound("Database not found: music", details=[_Payload()])
+        ),
+    )
+    with pytest.raises(SpannerError) as raised:
+        connector.execute("SELECT 1")
+    assert str(raised.value).endswith(
+        "in the connection string: NOT_FOUND: Database not found: music"
+    )
+
+
 def test_missing_database_names_the_path(opened: Opened) -> None:
     connector = connector_with(
         opened,
