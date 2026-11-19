@@ -403,6 +403,46 @@ Add connections under **Settings → Connections**, or list them in
 [docs/connections.md](./docs/connections.md) for URL schemes, scoping, and
 credential storage.
 
+#### Cloud Spanner (fork)
+
+This fork adds Cloud Spanner as a source. It is used like PostgreSQL: connect,
+ingest, build the ontology, ask questions. It has been tested on the local
+Spanner emulator only, not on real Cloud Spanner.
+
+1. Start the emulator and load the sample `music` database:
+
+   ```sh
+   docker run -d -p 127.0.0.1:9010:9010 -p 127.0.0.1:9020:9020 gcr.io/cloud-spanner-emulator/emulator
+   uv run python -m dev_tools.fixtures.seed_spanner_emulator
+   ```
+
+2. Add the connection. Either set it in `.env` before starting the stack:
+
+   ```sh
+   CONNECTION_STRINGS=spanner://auto-ontology/auto-ontology/music?emulator_host=host.docker.internal:9010
+   ```
+
+   or add it under **Settings → Connections → Cloud Spanner**:
+
+   | Field         | Value                       |
+   | ------------- | --------------------------- |
+   | Project ID    | `auto-ontology`             |
+   | Instance ID   | `auto-ontology`             |
+   | Database ID   | `music`                     |
+   | Emulator Host | `host.docker.internal:9010` |
+
+   `host.docker.internal` is how the Compose containers reach an emulator on
+   the host. A backend started with `uv run` on the host uses `localhost:9010`.
+
+3. Ingestion starts by itself. When the ontology is ready, ask a question such
+   as "What is the average album price per singer?".
+
+For a real database, leave the emulator host out
+(`spanner://<project>/<instance>/<database>`); the server then uses Application
+Default Credentials. Only GoogleSQL-dialect databases are supported, and every
+statement runs read-only. Details and limits are in
+[docs/connections.md](./docs/connections.md#cloud-spanner).
+
 ### Models
 
 Auto-Ontology uses four model roles. With an `nvapi-` key, each defaults to an
