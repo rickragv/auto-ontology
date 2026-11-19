@@ -109,6 +109,41 @@ Separate compose project `aospan` (own Postgres volume), Ollama preset
   No dialect rule was added.
 - Single asks on a 9B local model; not a measure of answer quality.
 
+### Steps 5 and 6: add in the UI, docs (2026-11-19)
+
+Commits `39bc98d6` (error text), `8aa4f701` (UI), and the docs commit. Upstream files
+touched: `connection_string_factory.py` +13, `frontend/enums/connection.ts` +23,
+`frontend/types/connection.ts` +12, `docs/connections.md`, `README.md`,
+`.env.example` +1.
+
+- Form fields: Project ID, Instance ID, Database ID (the connection's `database`, so it
+  equals the connector's `database_name`), optional Emulator Host. No secret fields.
+  The factory calls `spanner.format_connection_string`, which refuses a blank or
+  invalid id by name; every accepted character is URL-safe, so nothing is
+  percent-encoded and the URL parses back to the same parts (tested).
+- No schema picker. The connection test calls `ping()`, since the connector has no
+  `get_schemas`.
+- Error text: `str()` of a Google API error carried the raw details protos and the
+  client's request id. Now `<gRPC status>: <Spanner's message>`; the original stays
+  chained. Syntax error on the emulator, before:
+  `400 Syntax error: Unexpected identifier "SELEC" [at 1:1]\nSELEC 1\n^, request_id = 1.84…1 [type_url: "type.googleapis.com/googlesql.ErrorMessageModeForPayload"\nvalue: "\010\002"\n]`;
+  after: `INVALID_ARGUMENT: Syntax error: Unexpected identifier "SELEC" [at 1:1]\nSELEC 1\n^`.
+- `pytest auto_ontology/connectors`: 466 passed, 11 skipped, 1 error (the same
+  upstream SQLite test). `auto_ontology/server/connections`: 21 passed. With
+  `AUTO_ONTOLOGY_LIVE_SPANNER=1`: 164 passed. Ruff clean, OpenAPI unchanged.
+- Frontend: `pnpm install --frozen-lockfile`, `prettier --check`, `pnpm lint` (one
+  existing warning in `common/UserMenu.tsx`), `pnpm build`: all pass.
+- Through the stack (`aospan`, fresh Postgres volume, `CONNECTION_STRINGS` unset, both
+  images rebuilt; the frontend bundle contains the Spanner option), signed in through
+  the frontend gateway and called the routes the form calls:
+  `POST /api/connections/test` → 200, `schemas: []`; `POST /api/connections` → 201;
+  ingest ran by itself: 7 tables, 35 columns, 7 foreign-key rows in 7.3 s. Wrong
+  database id → 422 `… NOT_FOUND: Database not found: projects/…/databases/nosuchdb`.
+  Instance id `a/b` → 422 `Invalid Spanner instance id 'a/b': …`.
+
+Not tested: the form in a browser (only the API it calls), editing a Spanner
+connection, Vault storage, real Cloud Spanner.
+
 ### Found in shared code, not changed
 
 - `semantic/semantic_fk.py:194-217`: a declared foreign key whose target column is
