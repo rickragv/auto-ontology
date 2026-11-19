@@ -21,6 +21,7 @@ from google.api_core import exceptions as api
 
 from auto_ontology.connectors import spanner as spanner_module
 from auto_ontology.connectors.base import StatementTimeout
+from auto_ontology.connectors.connection_string_factory import build_connection_string
 from auto_ontology.connectors.db_errors import is_infrastructure_error
 from auto_ontology.connectors.registry import CONNECTOR_REGISTRY, create_connector
 from auto_ontology.connectors.spanner import (
@@ -248,6 +249,92 @@ def test_rejects_malformed_urls(url: str, message: str) -> None:
 def test_constructing_does_not_open_a_client(opened: Opened) -> None:
     SpannerDatabase(URL)
     assert opened == []
+
+
+# ----------------------------------------------------------------------
+# Connections added in the UI (connection_string_factory)
+# ----------------------------------------------------------------------
+
+
+def _ui_connection(**overrides: object) -> dict[str, object]:
+    connection: dict[str, object] = {
+        "type": "spanner",
+        "project_id": "my-project",
+        "instance_id": "my-instance",
+        "database": "music",
+        "emulator_host": "",
+    }
+    connection.update(overrides)
+    return connection
+
+
+def test_factory_builds_a_real_spanner_url_without_emulator() -> None:
+    assert build_connection_string(_ui_connection()) == URL
+
+
+def test_factory_adds_the_emulator_host() -> None:
+    connection = _ui_connection(emulator_host=" localhost:9010 ")
+    assert build_connection_string(connection) == EMULATOR_URL
+
+
+@pytest.mark.parametrize(
+    ("project", "instance", "database", "emulator_host"),
+    [
+        ("my-project", "my-instance", "music", None),
+        ("example.com:my-project", "inst_1", "db-2", "localhost:9010"),
+        ("p", "i", "d", "host.docker.internal:9010"),
+        ("p", "i", "d", "[::1]:9010"),
+        ("123-project", "Inst", "Music_DB", "10.0.0.5:65535"),
+    ],
+)
+def test_factory_output_parses_back_to_the_same_parts(
+    project: str, instance: str, database: str, emulator_host: str | None
+) -> None:
+    url = build_connection_string(
+        _ui_connection(
+            project_id=project,
+            instance_id=instance,
+            database=database,
+            emulator_host=emulator_host or "",
+        )
+    )
+    assert spanner_module._parse_connection_string(url) == {
+        "project": project,
+        "instance": instance,
+        "database": database,
+        "emulator_host": emulator_host,
+    }
+    assert SpannerDatabase(url).database_name == database
+
+
+@pytest.mark.parametrize("field", ["project_id", "instance_id", "database"])
+@pytest.mark.parametrize("blank", ["", "   ", None])
+def test_factory_requires_every_id(field: str, blank: str | None) -> None:
+    with pytest.raises(ValueError, match=f"missing required field: '{field}'"):
+        build_connection_string(_ui_connection(**{field: blank}))
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"project_id": "my/project"}, "Invalid Spanner project id"),
+        ({"project_id": "my project"}, "Invalid Spanner project id"),
+        ({"instance_id": "a/b"}, "Invalid Spanner instance id"),
+        ({"instance_id": "1inst"}, "Invalid Spanner instance id"),
+        ({"database": "my db"}, "Invalid Spanner database id"),
+        ({"database": "music?x=1"}, "Invalid Spanner database id"),
+        ({"database": "music%20"}, "Invalid Spanner database id"),
+        ({"database": "INFORMATION_SCHEMA"}, "system schema"),
+        ({"emulator_host": "localhost"}, "Invalid Spanner emulator host"),
+        ({"emulator_host": "http://localhost:9010"}, "Invalid Spanner emulator host"),
+        ({"emulator_host": "a:1&emulator_host=b:2"}, "Invalid Spanner emulator host"),
+    ],
+)
+def test_factory_refuses_values_that_would_not_round_trip(
+    overrides: dict[str, str], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        build_connection_string(_ui_connection(**overrides))
 
 
 # ----------------------------------------------------------------------

@@ -12,6 +12,7 @@ export enum ConnectionType {
 	KYUUBI = 'kyuubi',
 	TRINO = 'trino',
 	CLICKHOUSE = 'clickhouse',
+	SPANNER = 'spanner',
 }
 
 export const connectionDisplayName: Record<ConnectionType, string> = {
@@ -23,6 +24,7 @@ export const connectionDisplayName: Record<ConnectionType, string> = {
 	[ConnectionType.KYUUBI]: 'Apache Kyuubi',
 	[ConnectionType.TRINO]: 'Trino',
 	[ConnectionType.CLICKHOUSE]: 'ClickHouse',
+	[ConnectionType.SPANNER]: 'Cloud Spanner',
 };
 
 export const isConnectionType = (value: string | null | undefined): value is ConnectionType =>
@@ -48,7 +50,10 @@ export type ConnectionFieldKey =
 	| 'http_scheme'
 	| 'sso_federation'
 	| 'table_allow_regex'
-	| 'table_deny_regex';
+	| 'table_deny_regex'
+	| 'project_id'
+	| 'instance_id'
+	| 'emulator_host';
 
 export type ConnectionField = {
 	key: ConnectionFieldKey;
@@ -261,6 +266,23 @@ export const CONNECTION_FIELDS: Record<ConnectionType, ConnectionField[]> = {
 			placeholder: 'http',
 			optional: true,
 			hint: 'Leave empty to infer from the port: https on 443 and 8443, http otherwise. Set https explicitly for a TLS listener on any other port — unlike Trino, a password alone does not imply TLS here.',
+		},
+	],
+	[ConnectionType.SPANNER]: [
+		{ key: 'project_id', label: 'Project ID', placeholder: 'my-project' },
+		{ key: 'instance_id', label: 'Instance ID', placeholder: 'my-instance' },
+		{
+			key: 'database',
+			label: 'Database ID',
+			placeholder: 'my-database',
+			hint: 'GoogleSQL databases only. One connection covers one database; its default schema is listed under this name.',
+		},
+		{
+			key: 'emulator_host',
+			label: 'Emulator Host',
+			placeholder: 'Leave Empty for Cloud Spanner',
+			optional: true,
+			hint: 'host:port of a Spanner emulator, such as localhost:9010. Leave empty to connect to Cloud Spanner with the server’s Application Default Credentials.',
 		},
 	],
 };

@@ -243,6 +243,19 @@ def build_connection_string(connection: Mapping[str, Any]) -> str:
             url += f"?{'&'.join(params)}"
         return url
 
+    if conn_type == "spanner":
+        # No credentials: the connector uses Application Default Credentials,
+        # or none for an emulator. It owns the URL shape and refuses any id
+        # that would not parse back to the same parts.
+        from auto_ontology.connectors.spanner import format_connection_string
+
+        return format_connection_string(
+            project=_require(connection, "project_id"),
+            instance=_require(connection, "instance_id"),
+            database=_require(connection, "database"),
+            emulator_host=str(connection.get("emulator_host") or "").strip() or None,
+        )
+
     if conn_type == "heavydb":
         host = _require(connection, "host").rstrip("/")
         user = _require(connection, "user")

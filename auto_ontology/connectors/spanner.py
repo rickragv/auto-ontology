@@ -244,6 +244,46 @@ def _parse_connection_string(connection_string: str) -> dict[str, str | None]:
     }
 
 
+def format_connection_string(
+    *,
+    project: str,
+    instance: str,
+    database: str,
+    emulator_host: str | None = None,
+) -> str:
+    """Build the URL :func:`_parse_connection_string` reads back into these parts.
+
+    Used for connections added in the UI. Every character an accepted id or
+    emulator host may contain is URL-safe, so nothing is percent-encoded: a
+    value that would need encoding is not a valid id and is refused here,
+    naming the field, rather than turned into a URL that parses differently.
+
+    Raises:
+        ValueError: a part is empty or is not a valid id or ``host:port``.
+    """
+    id_rule = "a letter, then letters, digits, '-' and '_'"
+    for label, value, pattern, rule in (
+        ("project", project, _PROJECT_RE, "letters, digits, '-', '_', '.' and ':'"),
+        ("instance", instance, _INSTANCE_RE, id_rule),
+        ("database", database, _DATABASE_RE, id_rule),
+    ):
+        if not value:
+            raise ValueError(f"Spanner {label} id is required")
+        if not pattern.fullmatch(value):
+            raise ValueError(f"Invalid Spanner {label} id {value!r}: use {rule}")
+    url = f"spanner://{project}/{instance}/{database}"
+    if emulator_host is not None:
+        if not _EMULATOR_HOST_RE.fullmatch(emulator_host):
+            raise ValueError(
+                f"Invalid Spanner emulator host {emulator_host!r}: expected "
+                "host:port with no scheme, e.g. localhost:9010"
+            )
+        url += f"?emulator_host={emulator_host}"
+    # Also applies the checks that are not about characters (system schemas).
+    _parse_connection_string(url)
+    return url
+
+
 def _check_emulator_environment(emulator_host: str | None) -> None:
     """Refuse a ``SPANNER_EMULATOR_HOST`` the URL did not ask for.
 

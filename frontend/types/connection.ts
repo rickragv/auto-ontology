@@ -73,6 +73,17 @@ export type HeavyDBConnectionParams = {
 	protocol: string;
 };
 
+/** No credentials: the server uses Application Default Credentials, or none for an emulator. */
+export type SpannerConnectionParams = {
+	type: ConnectionType.SPANNER;
+	project_id: string;
+	instance_id: string;
+	/** The Spanner database id. */
+	database: string;
+	/** `host:port` of a Spanner emulator. Empty means Cloud Spanner. */
+	emulator_host?: string;
+};
+
 /**
  * Ingestion filters offered on every connector, regardless of type.
  *
@@ -94,6 +105,7 @@ export type ConnectionParams = (
 	| MySqlConnectionParams
 	| SnowflakeConnectionParams
 	| HeavyDBConnectionParams
+	| SpannerConnectionParams
 ) &
 	TableFilterParams;
 
