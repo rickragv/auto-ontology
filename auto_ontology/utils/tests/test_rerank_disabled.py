@@ -3,10 +3,8 @@
 """Tests for switching rerank off with ``RERANK_ENDPOINT=disabled``.
 
 Only the word ``disabled`` (any case, surrounding whitespace ignored) disables
-the reranker, and it must do so before any request leaves the process. Any
-other set value must be an ``http://`` or ``https://`` URL: anything else would
-fail on every call, and each caller would quietly take its unranked order, so
-it stops the import instead.
+the reranker, and it must do so before any request leaves the process. Every
+other value is upstream's to interpret: it is passed on unchanged and unchecked.
 """
 
 from __future__ import annotations
@@ -20,9 +18,8 @@ from typing import Any, Callable
 import httpx
 import pytest
 
-from auto_ontology.utils import model_config, rerank
+from auto_ontology.utils import rerank
 from auto_ontology.utils.rerank import RerankDisabled, rerank_hits
-from auto_ontology.utils.rerank_endpoint import resolve_rerank_endpoint
 
 _VAR = "RERANK_ENDPOINT"
 _REPO = Path(__file__).resolve().parents[3]
@@ -86,83 +83,21 @@ def test_disabled_with_no_hits_returns_empty_without_raising(server: Server) -> 
 # --- The setting ------------------------------------------------------------
 
 
-@pytest.mark.parametrize("raw", [None, ""])
-def test_unset_or_empty_resolves_exactly_as_upstream(
-    monkeypatch: pytest.MonkeyPatch, raw: str | None
-) -> None:
-    """Including a shared default that is not a URL: that one is upstream's."""
-    monkeypatch.setenv("DEFAULT_MODELS_ENDPOINT", "not-checked")
-    if raw is None:
-        monkeypatch.delenv(_VAR, raising=False)
-    else:
-        monkeypatch.setenv(_VAR, raw)
+def _imported_endpoint(value: str | None, **extra: str) -> str:
+    """What a fresh interpreter's rerank module holds with ``RERANK_ENDPOINT=value``.
 
-    assert resolve_rerank_endpoint() == model_config.resolve("RERANK", "ENDPOINT")
-    assert resolve_rerank_endpoint() == "not-checked"
-
-
-@pytest.mark.parametrize("raw", ["disabled", " Disabled ", "DISABLED"])
-def test_disabled_in_any_case_resolves_to_disabled(
-    monkeypatch: pytest.MonkeyPatch, raw: str
-) -> None:
-    monkeypatch.setenv(_VAR, raw)
-
-    assert resolve_rerank_endpoint() == "disabled"
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [
-        ("https://nim.example/v1/ranking", "https://nim.example/v1/ranking"),
-        (" http://localhost:8015 ", "http://localhost:8015"),
-        ("HTTPS://nim.example/x", "HTTPS://nim.example/x"),
-        ("https://disabled.example/v1", "https://disabled.example/v1"),
-    ],
-)
-def test_a_url_is_kept_without_surrounding_whitespace(
-    monkeypatch: pytest.MonkeyPatch, raw: str, expected: str
-) -> None:
-    monkeypatch.setenv(_VAR, raw)
-
-    assert resolve_rerank_endpoint() == expected
-
-
-@pytest.mark.parametrize(
-    "raw",
-    [
-        "off",
-        "none",
-        "false",
-        "disable",
-        "disabled/v1",
-        "localhost:8015/v1",
-        "ftp://nim.example",
-        "   ",
-    ],
-)
-def test_any_other_value_is_refused_naming_the_setting_and_the_choices(
-    monkeypatch: pytest.MonkeyPatch, raw: str
-) -> None:
-    monkeypatch.setenv(_VAR, raw)
-
-    with pytest.raises(ValueError) as excinfo:
-        resolve_rerank_endpoint()
-
-    message = str(excinfo.value)
-    assert message.startswith(f"{_VAR} must be")
-    assert repr(raw) in message
-    for accepted in ("http://", "https://", "'disabled'", "unset"):
-        assert accepted in message
-
-
-def _import_rerank(value: str) -> subprocess.CompletedProcess[str]:
-    """Import the module in a fresh interpreter with ``RERANK_ENDPOINT=value``."""
-    env = {**os.environ, _VAR: value}
-    return subprocess.run(
+    Printed with ``repr`` so surrounding whitespace survives the pipe.
+    """
+    env = {**os.environ, **extra}
+    env.pop(_VAR, None)
+    if value is not None:
+        env[_VAR] = value
+    result = subprocess.run(
         [
             sys.executable,
             "-c",
-            "from auto_ontology.utils import rerank; print(rerank._RERANK_ENDPOINT)",
+            "from auto_ontology.utils import rerank;"
+            "print(repr(rerank.get_rerank_kwargs()['rerank_invoke_url']))",
         ],
         cwd=_REPO,
         env=env,
@@ -170,20 +105,45 @@ def _import_rerank(value: str) -> subprocess.CompletedProcess[str]:
         text=True,
         timeout=120,
     )
-
-
-def test_a_bad_value_stops_the_import() -> None:
-    result = _import_rerank("none")
-
-    assert result.returncode != 0
-    assert "ValueError: RERANK_ENDPOINT must be" in result.stderr
-
-
-def test_a_good_value_is_what_the_module_uses() -> None:
-    result = _import_rerank(" Disabled ")
-
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "disabled"
+    return result.stdout.strip()
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "https://nim.example/v1/ranking",
+        " http://localhost:8015 ",
+        " Disabled ",
+        "none",
+        "localhost:8015/v1",
+        "   ",
+    ],
+)
+def test_a_set_value_is_passed_on_unchecked_and_untrimmed(raw: str) -> None:
+    """As upstream: the import never fails; only ``rerank_hits`` reads ``disabled``."""
+    assert _imported_endpoint(raw) == repr(raw)
+
+
+@pytest.mark.parametrize("raw", [None, ""])
+def test_unset_or_empty_takes_the_shared_default(raw: str | None) -> None:
+    assert (
+        _imported_endpoint(raw, DEFAULT_MODELS_ENDPOINT="not-checked")
+        == "'not-checked'"
+    )
+
+
+@pytest.mark.parametrize("value", ["none", "off", "disable", "disabled/v1"])
+def test_only_the_exact_word_disables(server: Server, value: str) -> None:
+    """A near-miss is a URL to upstream: the request is attempted, not skipped."""
+    seen = server(
+        {"rankings": [{"index": 0, "logit": 1.0}, {"index": 1, "logit": 0.0}]}
+    )
+
+    rerank_hits("fruit", _HITS, rerank_invoke_url=value, model_name="m")
+
+    assert len(seen) == 1
+    assert str(seen[0].url).startswith(value)
 
 
 def test_a_normal_url_still_ranks(server: Server) -> None:

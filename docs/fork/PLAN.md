@@ -584,7 +584,7 @@ and several nits. All were fixed except where noted.
 | Model output size never compared with `EMBED_DIMENSIONS`: searches came back empty and an ingest deleted rows before failing | `embed_texts` checks every vector when the setting is set (`EmbeddingSizeMismatchError`); not retried; ingest fails before its reset; compilation sends one probe text before any table (`utils/embedding_probe.py`) | tests; live with `bge-m3` (1024) and `EMBED_DIMENSIONS=768`: ingest failed with the message, compile stopped in 0.3 s with 0 chat calls and 0 Terms |
 | Bad `EMBED_*` value on `PATCH /terms` answered 200 | `EmbeddingConfigError(ValueError)` base class; all carve-outs catch it | 14 tests fail without it |
 | A save during a mismatch deleted the old vector before the guard | `delete_by_id(check_size=True)` on the 7 delete-then-embed saves; settings read before the delete | tests on the recorded DELETE |
-| `RERANK_ENDPOINT` near-misses (`none`, `off`) used as URLs | refused when the rerank module is imported (`utils/rerank_endpoint.py`) | tests; in the built image the ingestion service import raises, the server (which never imports rerank) starts |
+| `RERANK_ENDPOINT` near-misses (`none`, `off`) used as URLs | refused at import in `36914e66`; **reverted 2026-11-19** at the user's request, because the variable is upstream's and the check changed upstream behaviour. Near-misses are used as URLs again, as upstream | tests in `utils/tests/test_rerank_disabled.py` |
 | Full suite depended on the developer's `.env` | `auto_ontology/conftest.py` unsets fork settings per test | upstream `test_embedding.py` 41 passed with fork settings exported |
 | `drop_params: true` in every preset (silent field drop) | removed | each preset re-run on a 3-table database: ingest, compile, 1 question, every gateway call 200 |
 | Example env files shipped `LITELLM_MASTER_KEY=change-me` | shipped empty; Compose refuses to start | `compose config` error seen |
@@ -646,13 +646,12 @@ hostnames resolved to the stand-in.
   No `dimensions` field; vector size 2048 in both.
 - Differences that send nothing: `EmbedParams.nvidia_fields=True`, `reasoning_effort`
   in `ChatOpenAI.model_fields_set` (value `None`), a different table-existence SQL text.
-- **One real difference, kept by decision:** `RERANK_ENDPOINT` is upstream's variable,
-  and `36914e66` validates it at import. A value with no scheme, or only spaces, starts
-  on upstream (every rerank call fails and takes the first Term) and stops the ingestion
-  service here. A URL padded with spaces fails on upstream and works here. Kept because
-  the alternative is the silent wrong-URL path the audit removed; documented in
-  `docs/model-providers.md`. To restore exact parity, validate only the `disabled` word
-  and pass everything else through.
+- **One real difference, since removed:** at the compared commits `RERANK_ENDPOINT`
+  (upstream's variable) was validated at import (`36914e66`), so a value with no scheme
+  or only spaces stopped the ingestion service where upstream starts. On 2026-11-19 the
+  user asked for upstream behaviour: `utils/rerank_endpoint.py` was deleted and the
+  module resolves the endpoint with upstream's own line again. Only `rerank_hits` reads
+  the word `disabled`. The driver was not re-run after this; unit tests cover it.
 - Not covered: error and retry paths, streaming and async chat (read only), full compile
   and question runs, Helm, compose defaults, real NVIDIA server behaviour. A database
   built by an older upstream at another vector size would raise on open here; inferred,

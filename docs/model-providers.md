@@ -56,9 +56,9 @@ four triplets for that reason.
 | `EMBED_BATCH_SIZE` | 32 | Whole number, 1 or more, plain digits | `EmbeddingConfigError` when the embedding parameters are first built, that is on the first embedding call. |
 | `EMBED_MAX_CONCURRENT` | 32 | Whole number, 1 or more | Same as `EMBED_BATCH_SIZE`. |
 | `EMBED_EXTRA_PARAMS` | `nvidia` | `nvidia` or `none` (case and surrounding spaces ignored; unset or blank means `nvidia`) | `EmbeddingConfigError` when the embedding parameters are first built, that is on the first embedding call, not at startup. |
-| `RERANK_ENDPOINT=disabled` | unset (NVIDIA or configured endpoint) | An `http://` or `https://` URL, or the word `disabled` (any case, surrounding spaces ignored) | `ValueError` when the rerank module is imported. The ingestion service, the only user of rerank, does not start. `none`, `off` and the like are refused, not treated as URLs. |
+| `RERANK_ENDPOINT=disabled` | unset (NVIDIA or configured endpoint) | The word `disabled` (any case, surrounding spaces ignored) switches rerank off. Any other value is used as the URL, as upstream does | Not validated, as upstream: the variable is upstream's and only the word `disabled` is added. `none`, `off` or a URL without its scheme is used as a URL; each rerank call then fails, logs an error and takes the first candidate. |
 
-No setting falls back to a default on a bad value. Every error names the variable, the
+No validated setting falls back to a default on a bad value. Every error names the variable, the
 accepted values, what unset means and the value it got. A bad embedding setting met
 during a save, a search or a compile is reported the same way as a size mismatch (HTTP
 422 on saves, an error event on a question), not logged and skipped.
@@ -348,8 +348,10 @@ the stand-in.
   the same requests in both trees: same bodies, headers and counts. Only the arrival
   order of concurrent embedding requests varied.
 - No request carried `dimensions`. Tables were created as `halfvec(2048)` in both.
-- One deliberate difference, on a malformed `RERANK_ENDPOINT` only: see
-  [Known issues that affect use](#known-issues-that-affect-use).
+- A malformed `RERANK_ENDPOINT` stopped the ingestion service at the compared commit.
+  That check was removed afterwards (2026-11-19): every value except the word
+  `disabled` is now passed on as upstream does. The comparison was not re-run; the
+  rerank module's unit tests cover it.
 - Not covered by the comparison: error and retry paths (the stand-in always succeeded),
   streaming, a full compile or question, Helm, and how real NVIDIA servers answer.
 
@@ -395,12 +397,10 @@ of 7 on this one question; other questions were not measured.
 
 ## Known issues that affect use
 
-- A malformed `RERANK_ENDPOINT` behaves differently from upstream, although it is an
-  upstream variable. Upstream starts with any value; a value that is not a usable URL
-  makes every rerank call fail and take the first candidate, with an error in the log.
-  Here a value that is neither an `http://` or `https://` URL nor `disabled` stops the
-  ingestion service at startup, and spaces around a valid URL are removed. A valid URL
-  and an unset variable behave as upstream.
+- A mistyped `RERANK_ENDPOINT` is not reported at startup. Only the exact word
+  `disabled` switches rerank off. `none`, `off` or a URL without `http://` is used as a
+  URL, as on upstream: each rerank call fails, logs an error with a traceback and takes
+  the first candidate.
 - A SQLite source file must be named `main.sqlite`. Other names produce three-part table
   names that SQLite rejects. This is an upstream issue, not changed here.
 - On Windows, clone with `core.autocrlf=false`. Windows line endings break the

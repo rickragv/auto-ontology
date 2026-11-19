@@ -25,12 +25,11 @@ from typing import Any
 import httpx
 
 from auto_ontology.utils.model_config import resolve
-from auto_ontology.utils.rerank_endpoint import resolve_rerank_endpoint
 
 # Hosted NeMo reranking endpoint — no local GPU required. Override RERANK_ENDPOINT
 # to point at a self-hosted vLLM/NIM ranking server. Each field falls back to
 # DEFAULT_MODELS_<field> when unset.
-_RERANK_ENDPOINT = resolve_rerank_endpoint()
+_RERANK_ENDPOINT = resolve("RERANK", "ENDPOINT")
 _RERANK_MODEL = resolve("RERANK", "MODEL")
 _RERANK_API_KEY = resolve("RERANK", "API_KEY")
 
