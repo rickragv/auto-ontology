@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: Apache-2.0
+# Helm values for the Ollama preset of the LiteLLM gateway: the chart's
+# counterpart of env.ollama.example, with the same settings and values.
+#
+# Copy this file, set masterKey below in the copy, then from the repo root:
+#   helm upgrade --install auto-ontology helm/auto-ontology \
+#     -f <your copy> \
+#     --set-file litellm.config=deploy/litellm/ollama.yaml \
+#     --set adminEmail=<email> --set adminPassword=<password> \
+#     --set postgresPassword=<password>
+#
+# Set the key in the file, not with --set litellm.masterKey. The *_API_KEY
+# lines below are YAML aliases of it, filled in when the file is read, so
+# --set would change the gateway's key but not the backend's. The render fails
+# while the key or any alias of it is empty.
+#
+# ollama.yaml points at http://host.docker.internal:11434. That name resolves
+# only on Docker Desktop style clusters (Docker Desktop's Kubernetes, kind on
+# Docker Desktop). On any other cluster copy the preset, change both api_base
+# lines to your Ollama Service URL (for example http://ollama.<namespace>:11434
+# and http://ollama.<namespace>:11434/v1) and pass the copy to --set-file.
+
+litellm:
+  enabled: true
+  # The gateway's only credential; the backend sends it as its API key below.
+  # Set a long random value, e.g. the output of: echo "sk-$(openssl rand -hex 32)"
+  masterKey: &gatewayKey ""
+
+# The chart sets EMBED_ENDPOINT and EMBED_MODEL from these two values, so they
+# cannot go in extraEnv. The backend appends /embeddings to the URL itself.
+embedEndpoint: http://litellm:4000/v1
+embedModel: ao-embed
+
+# Every triplet is set in full, so no field falls back to a built-in NVIDIA
+# endpoint. Model names are the gateway aliases from ollama.yaml.
+extraEnv:
+  # --- Chat ---
+  # The gateway speaks the OpenAI protocol, so both roles use the OpenAI-style
+  # client whatever the model is called.
+  REASONING_ENDPOINT: http://litellm:4000/v1
+  REASONING_API_KEY: *gatewayKey
+  REASONING_MODEL: ao-chat
+  REASONING_CLIENT: openai
+
+  NON_REASONING_ENDPOINT: http://litellm:4000/v1
+  NON_REASONING_API_KEY: *gatewayKey
+  NON_REASONING_MODEL: ao-chat
+  NON_REASONING_CLIENT: openai
+
+  # Turns thinking off on qwen3.5. Remove it to let the model think.
+  LLM_REASONING_EFFORT: none
+
+  # A single local GPU is slow and serves one request at a time. The upstream
+  # defaults (120 s per call, 6 at once) suit hosted endpoints.
+  LLM_INVOKE_TIMEOUT_S: "600"
+  LLM_MAX_INFLIGHT: "2"
+  SEMANTIC_LLM_MAX_INFLIGHT: "2"
+
+  # --- Embeddings ---
+  EMBED_API_KEY: *gatewayKey
+  # bge-m3 returns 1024 dimensions. Ingest and query must use the same model.
+  EMBED_DIMENSIONS: "1024"
+
+  # --- Rerank ---
+  # Ollama has no rerank API, so rerank is off. "disabled" sends no request.
+  # To enable it, add an ao-rerank model to the gateway config and set
+  # RERANK_ENDPOINT to http://litellm:4000/rerank.
+  RERANK_ENDPOINT: disabled
+  RERANK_API_KEY: *gatewayKey
+  RERANK_MODEL: ao-rerank

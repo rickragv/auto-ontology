@@ -186,3 +186,60 @@ frontend:
     requests:
       cpu: 100m
       memory: 256Mi
+
+# ------------------------------------------------------------------
+# Extra environment variables
+# ------------------------------------------------------------------
+# Added to the bundled Secret (<release>-secrets), which the backend, ingestion,
+# frontend and migration Jobs load with envFrom. Use it for settings this chart
+# has no value for, e.g. model triplets that point at the LiteLLM gateway:
+#   extraEnv:
+#     REASONING_ENDPOINT: http://litellm:4000/v1
+#     REASONING_CLIENT: openai
+#     EMBED_DIMENSIONS: "1024"
+# Each value must be a non-empty string; quote numbers. A key the chart already
+# sets (EMBED_ENDPOINT, POSTGRES_PASSWORD, ...) fails the render and names the
+# value to set instead. Needs bundledSecret.enabled: with it off, put the
+# variables in the external Secret (setting extraEnv then fails the render).
+extraEnv: {}
+
+# ------------------------------------------------------------------
+# LiteLLM gateway (optional)
+# ------------------------------------------------------------------
+# One OpenAI-compatible endpoint in front of any model provider (Ollama,
+# Gemini, ...). Off by default. When enabled the chart adds a Service named
+# `litellm` (in-cluster URL http://litellm:<service.port>/v1), a Deployment and
+# a ConfigMap holding `config`, and the backend and ingestion Pods wait for the
+# gateway before they start. It does not point the backend at the gateway: set
+# the model settings with extraEnv. Examples:
+# deploy/litellm/helm-values.<preset>.example.yaml.
+litellm:
+  enabled: false
+  image:
+    repository: ghcr.io/berriai/litellm
+    tag: v1.108.5
+    # digest: ""  # e.g. sha256:...; overrides tag when set (immutable pin)
+  service:
+    port: 4000
+  # The gateway's only credential: it is stateless, with no database and no
+  # virtual keys. Clients, the backend included, send it as their API key.
+  # Required when enabled. Set a long random value, e.g. the output of:
+  #   echo "sk-$(openssl rand -hex 32)"
+  masterKey: ""
+  # The full LiteLLM config YAML, as a string. Helm cannot read files outside
+  # the chart, so pass a preset with:
+  #   --set-file litellm.config=deploy/litellm/<preset>.yaml
+  # Required when enabled. A change rolls the gateway Pod.
+  config: ""
+  # Provider credentials for the gateway only, read by the config as
+  # os.environ/<NAME>, e.g. GEMINI_API_KEY. The other workloads do not get them.
+  providerEnv: {}
+  # masterKey and providerEnv go into a Secret <release>-litellm, rendered only
+  # when bundledSecret.enabled. With it off, an external mechanism must supply
+  # that Secret (LITELLM_MASTER_KEY plus any provider keys), and setting
+  # masterKey or providerEnv here fails the render.
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi

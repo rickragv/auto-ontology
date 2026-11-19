@@ -1,0 +1,129 @@
+{{- /*
+SPDX-License-Identifier: Apache-2.0
+
+Optional LiteLLM gateway: one OpenAI-compatible endpoint in front of any model
+provider. Off by default (litellm.enabled). The chart's counterpart of
+docker-compose.litellm.yml: same image, same in-cluster URL
+(http://litellm:4000/v1), stateless (no database, the master key is the only
+credential). It does not point the backend at the gateway; extraEnv does.
+*/ -}}
+{{- include "auto-ontology.litellm.validate" . }}
+{{- if .Values.litellm.enabled }}
+{{- if .Values.bundledSecret.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  # Gateway-only credentials, kept out of <release>-secrets so the other
+  # workloads never see the provider keys.
+  name: {{ include "auto-ontology.litellm.secretName" . }}
+  labels:
+    {{- include "auto-ontology.componentLabels" (dict "Chart" .Chart "Release" .Release "Values" .Values "component" "litellm") | nindent 4 }}
+type: Opaque
+stringData:
+  LITELLM_MASTER_KEY: {{ .Values.litellm.masterKey | toString | quote }}
+  {{- range $key, $value := .Values.litellm.providerEnv }}
+  {{ $key }}: {{ include "auto-ontology.envValue" (dict "path" (printf "litellm.providerEnv.%s" $key) "value" $value) | quote }}
+  {{- end }}
+---
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "auto-ontology.litellm.configMapName" . }}
+  labels:
+    {{- include "auto-ontology.componentLabels" (dict "Chart" .Chart "Release" .Release "Values" .Values "component" "litellm") | nindent 4 }}
+data:
+  config.yaml: |
+    {{- .Values.litellm.config | nindent 4 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # Fixed name (no fullname prefix) so the in-cluster URL is
+  # http://litellm:<port>/v1, the same as under Docker Compose.
+  name: litellm
+  labels:
+    {{- include "auto-ontology.componentLabels" (dict "Chart" .Chart "Release" .Release "Values" .Values "component" "litellm") | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.litellm.service.port }}
+      targetPort: 4000
+  selector:
+    {{- include "auto-ontology.componentSelectorLabels" (dict "root" . "component" "litellm") | nindent 4 }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  labels:
+    {{- include "auto-ontology.componentLabels" (dict "Chart" .Chart "Release" .Release "Values" .Values "component" "litellm") | nindent 4 }}
+spec:
+  replicas: {{ .Values.litellm.replicas }}
+  selector:
+    matchLabels:
+      {{- include "auto-ontology.componentSelectorLabels" (dict "root" . "component" "litellm") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "auto-ontology.componentSelectorLabels" (dict "root" . "component" "litellm") | nindent 8 }}
+      annotations:
+        # The gateway reads its config only at startup, so a config change
+        # has to roll the Pod.
+        checksum/config: {{ .Values.litellm.config | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "auto-ontology.imagePullSecrets" . | nindent 6 }}
+      containers:
+        - name: litellm
+          image: "{{ include "auto-ontology.image" .Values.litellm.image }}"
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          args: ["--config", "/etc/litellm/config.yaml", "--port", "4000"]
+          ports:
+            - name: http
+              containerPort: 4000
+          envFrom:
+            - secretRef:
+                name: {{ include "auto-ontology.litellm.secretName" . }}
+          env:
+            # Use the model price map bundled in the image instead of fetching
+            # it from GitHub at every start.
+            - name: LITELLM_LOCAL_MODEL_COST_MAP
+              value: "True"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/litellm
+              readOnly: true
+          # /health/liveliness needs no key; it is what the Compose healthcheck
+          # uses. The gateway takes about 20 s to start, so the startup probe
+          # allows up to 3 minutes before the liveness probe takes over.
+          startupProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 36
+          readinessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: 4000
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            {{- toYaml .Values.litellm.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "auto-ontology.litellm.configMapName" . }}
+{{- end }}

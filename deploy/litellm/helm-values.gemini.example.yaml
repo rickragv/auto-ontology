@@ -1,0 +1,79 @@
+# SPDX-License-Identifier: Apache-2.0
+# Helm values for the Gemini preset of the LiteLLM gateway: the chart's
+# counterpart of env.gemini.example, with the same settings and values.
+#
+# Copy this file, set masterKey below in the copy, then from the repo root:
+#   helm upgrade --install auto-ontology helm/auto-ontology \
+#     -f <your copy> \
+#     --set-file litellm.config=deploy/litellm/gemini.yaml \
+#     --set litellm.providerEnv.GEMINI_API_KEY=<key> \
+#     --set adminEmail=<email> --set adminPassword=<password> \
+#     --set postgresPassword=<password>
+#
+# Set the master key in the file, not with --set litellm.masterKey. The
+# *_API_KEY lines below are YAML aliases of it, filled in when the file is
+# read, so --set would change the gateway's key but not the backend's. The
+# render fails while the key or any alias of it is empty. GEMINI_API_KEY is not
+# aliased, so --set works for it; the render fails while it is empty.
+#
+# Prompts, schema details and catalog text go to Google. Google's pricing page
+# says free-tier content is used to improve its products; paid-tier content is
+# not.
+
+litellm:
+  enabled: true
+  # The gateway's only credential; the backend sends it as its API key below.
+  # Set a long random value, e.g. the output of: echo "sk-$(openssl rand -hex 32)"
+  masterKey: &gatewayKey ""
+  providerEnv:
+    # Used by the gateway only. Create one at https://aistudio.google.com/apikey.
+    # Limits apply per Google Cloud project, not per key.
+    GEMINI_API_KEY: ""
+
+# The chart sets EMBED_ENDPOINT and EMBED_MODEL from these two values, so they
+# cannot go in extraEnv. The backend appends /embeddings to the URL itself.
+embedEndpoint: http://litellm:4000/v1
+embedModel: ao-embed
+
+# Every triplet is set in full, so no field falls back to a built-in NVIDIA
+# endpoint. Model names are the gateway aliases from gemini.yaml.
+extraEnv:
+  # --- Chat ---
+  # The gateway speaks the OpenAI protocol, so both roles use the OpenAI-style
+  # client whatever the model is called.
+  REASONING_ENDPOINT: http://litellm:4000/v1
+  REASONING_API_KEY: *gatewayKey
+  REASONING_MODEL: ao-chat
+  REASONING_CLIENT: openai
+
+  NON_REASONING_ENDPOINT: http://litellm:4000/v1
+  NON_REASONING_API_KEY: *gatewayKey
+  NON_REASONING_MODEL: ao-chat
+  NON_REASONING_CLIENT: openai
+
+  # LLM_REASONING_EFFORT is left unset, so gemini-3.8-flash thinks at its
+  # default level. LLM_INVOKE_TIMEOUT_S is left at the upstream 120 s.
+
+  # Free tier: the stack makes calls faster than its per-minute limit, and the
+  # backend retries a rate-limited chat call for only about 6 s. One call in
+  # flight per process keeps the overrun small. On a paid tier, remove both.
+  LLM_MAX_INFLIGHT: "1"
+  SEMANTIC_LLM_MAX_INFLIGHT: "1"
+
+  # --- Embeddings ---
+  EMBED_API_KEY: *gatewayKey
+  # gemini.yaml asks gemini-embedding-001 for 768 dimensions. The two must
+  # match. Ingest and query must use the same model.
+  EMBED_DIMENSIONS: "768"
+  # Free tier: 10 texts per request, one request at a time per embedding call.
+  # On a paid tier, remove both lines (upstream: 32 and 32).
+  EMBED_BATCH_SIZE: "10"
+  EMBED_MAX_CONCURRENT: "1"
+
+  # --- Rerank ---
+  # No rerank model in gemini.yaml, so rerank is off. "disabled" sends no
+  # request. To enable it, add an ao-rerank model to the gateway config and set
+  # RERANK_ENDPOINT to http://litellm:4000/rerank.
+  RERANK_ENDPOINT: disabled
+  RERANK_API_KEY: *gatewayKey
+  RERANK_MODEL: ao-rerank
