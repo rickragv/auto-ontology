@@ -240,6 +240,64 @@ Why the preset is written the way it is:
   content worse in two probes, so the model's own sampling defaults apply.
 - **Rerank is off** (`RERANK_ENDPOINT=disabled`), because Ollama has no rerank API.
 
+## Helm
+
+The chart in `helm/auto-ontology/` can deploy the gateway too. It is off by default:
+with no new value set, the chart renders the same manifests as upstream `fc43a826`,
+byte for byte.
+
+Two values were added:
+
+| Value | Default | What it does |
+| --- | --- | --- |
+| `litellm.enabled` (with `litellm.config`, `litellm.masterKey`, `litellm.providerEnv`, `litellm.image`, `litellm.service.port`, `litellm.replicas`, `litellm.resources`) | `false` | Adds a Service named `litellm` (URL `http://litellm:4000/v1`, as under Compose), a Deployment, a ConfigMap with the gateway config, and a Secret `<release>-litellm` with the master key and provider keys. The backend and ingestion Pods wait for the gateway's health check before they start. |
+| `extraEnv` | `{}` | Extra environment variables added to the `<release>-secrets` Secret that every workload loads. This is how the model triplets and the fork's settings are set. |
+
+The chart does not point the backend at the gateway by itself. You set the model
+settings with `extraEnv`, as the example files do:
+`deploy/litellm/helm-values.ollama.example.yaml` and
+`deploy/litellm/helm-values.gemini.example.yaml`. They carry the same settings as the
+matching `env.*.example` files.
+
+1. **Use images built from this fork.** The chart's default images are upstream's
+   published ones, which do not know the fork's settings. Build the backend image from
+   this repository, push it where your cluster can pull it, and set
+   `backend.image` and `ingestion.image` (they share one image). The frontend is
+   unchanged from upstream.
+2. Copy an example values file and set `masterKey` in the copy. Set it in the file, not
+   with `--set litellm.masterKey`: the `*_API_KEY` lines are YAML aliases of it, and
+   `--set` would change the gateway's key but not the backend's.
+3. Install, passing the gateway config as a file:
+
+   ```bash
+   helm upgrade --install auto-ontology helm/auto-ontology \
+     -f my-values.yaml \
+     --set-file litellm.config=deploy/litellm/ollama.yaml \
+     --set adminEmail=<email> --set adminPassword=<password> \
+     --set postgresPassword=<password>
+   ```
+
+   For Gemini use `deploy/litellm/gemini.yaml` and add
+   `--set litellm.providerEnv.GEMINI_API_KEY=<key>`. Only the gateway Pod receives
+   that key.
+
+Things to know:
+
+- `deploy/litellm/ollama.yaml` points at `http://host.docker.internal:11434`. That
+  name resolves only on Docker Desktop style clusters. On any other cluster, copy the
+  preset, change both `api_base` lines to your Ollama Service URL, and pass the copy to
+  `--set-file`.
+- Bad values stop the render with a message naming the value: gateway enabled without
+  a config or master key; an `extraEnv` key the chart already sets (use the chart's own
+  value, for example `embedEndpoint`); an empty `extraEnv` value; gateway values set
+  while `litellm.enabled` is false; `extraEnv`, `masterKey` or `providerEnv` set while
+  `bundledSecret.enabled` is false (put them in the external Secrets instead).
+- A change to `litellm.config` rolls the gateway Pod. A change to `masterKey`,
+  `providerEnv` or `extraEnv` does not roll any Pod, as with upstream's Secret: restart
+  the Deployments yourself.
+- A master key passed with `--set` that differs from the one in the file is not
+  detected. The backend is then rejected by the gateway at run time.
+
 ## Adding another provider
 
 1. Add a model to a preset YAML in `deploy/litellm/` (or copy one to a new name and set
@@ -391,7 +449,14 @@ of 7 on this one question; other questions were not measured.
   Whether the first Term is a good owner was not judged.
 - Linux hosts. The Compose file maps `host.docker.internal` for them, but this was not
   run.
-- Helm. The chart values are not updated for any of this.
+- Helm beyond one install. On 2026-11-19 the chart was installed on a throwaway kind
+  cluster with the Ollama example: all Pods became ready; from the backend Pod a chat
+  call and an embedding call (1024 dimensions) through the gateway succeeded;
+  `/api/health` answered 200; with the gateway scaled to zero a new backend Pod waited
+  and started once it returned. Not run: an ingest, a compile or a question on
+  Kubernetes, the Gemini example (rendered and linted only), a cluster other than kind
+  on Docker Desktop, and the `bundledSecret.enabled=false` path with real external
+  Secrets (rendered only).
 - A live run with upstream defaults and an NVIDIA key. No key was available; the
   request comparison above stands in for it.
 

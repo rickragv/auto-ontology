@@ -564,6 +564,11 @@ Quickstart first, as above.
 This preset has had one small run on a paid key: one ingest, one compile and
 one question. Free-tier behaviour is not tested.
 
+On Kubernetes, the Helm chart can deploy the gateway as well
+(`litellm.enabled`, off by default). See the Helm section of
+[docs/model-providers.md](./docs/model-providers.md#helm) and the example
+values in `deploy/litellm/helm-values.*.example.yaml`.
+
 Changing the embedding model or its size on a database that already has
 vectors needs a re-ingest. The settings, the other presets, adding a
 provider, and what was and was not tested are in

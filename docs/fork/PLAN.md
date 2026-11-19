@@ -398,7 +398,8 @@ Drafted bug reports, with code references, are in
 - New database connectors (BigQuery, Spanner, SQL Server). Planned next, in a separate
   branch.
 - Frontend changes, unless a model setting is surfaced in the UI and breaks.
-- Helm chart changes. Note in the docs that Helm values are not updated.
+- ~~Helm chart changes.~~ Done on 2026-11-19 at the user's request; see "Helm chart" at
+  the end.
 - Per-provider logic inside `auto_ontology`. Provider differences belong in gateway
   config.
 
@@ -657,3 +658,30 @@ hostnames resolved to the stand-in.
   built by an older upstream at another vector size would raise on open here; inferred,
   not tested.
 - Harness and records: session scratchpad `parity/` (not in the repo).
+
+## Helm chart (2026-11-19)
+
+Requested by the user after the merge to `main`. Design: the gateway is an optional
+block (`litellm.enabled`, default false); model settings go through a generic
+`extraEnv` map into the existing Secret; the chart does not wire the backend to the
+gateway by itself; the gateway config is passed with `--set-file` so the presets in
+`deploy/litellm/` are not copied into the chart.
+
+- Upstream chart files changed: `values.yaml` (+57, appended), `secret.yaml` (+3),
+  `backend.yaml` (+3), `ingestion.yaml` (+3), `NOTES.txt` (+4). New:
+  `templates/litellm.yaml`, `templates/_litellm.tpl`, two example values files in
+  `deploy/litellm/`.
+- Checks run (Helm 3.17.3 in Docker): default render byte-identical to `fc43a826`,
+  also with `pgadmin.enabled=false` and `bundledSecret.enabled=false`; lint; kubeconform
+  strict on Kubernetes 1.31 (63 of 63 resources); every failure path renders its
+  message; `_check_images` of the release script still passes.
+- Live: kind v0.29.0 on Docker Desktop, Ollama example, locally built fork images.
+  All Pods ready in about 2 minutes; chat and a 1024-dimension embedding through the
+  gateway from the backend Pod; `/api/health` 200; the wait init container held a new
+  backend Pod for 64 s while the gateway was scaled to zero; a config-only upgrade
+  rolled the gateway Pod.
+- Not run: ingest, compile or question on Kubernetes; the Gemini example live; any
+  cluster other than kind on Docker Desktop.
+- Limits: the published upstream images do not contain the fork's backend code, so a
+  fork-built image is needed; a master key given with `--set` that differs from the
+  file's is not detected; Secret-only changes do not roll Pods (as upstream).
