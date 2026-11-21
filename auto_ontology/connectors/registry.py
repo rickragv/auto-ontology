@@ -15,6 +15,7 @@ from auto_ontology.catalog.table_filter import TableFilter, from_connection
 from auto_ontology.connectors.base import SQLDatabase
 
 from auto_ontology.connectors.connection_string_factory import build_connection_string
+from auto_ontology.connectors.bigquery import BigQueryDatabase
 from auto_ontology.connectors.clickhouse import ClickHouseDatabase
 from auto_ontology.connectors.databricks import DatabricksDatabase
 from auto_ontology.connectors.duckdb import DuckDBDatabase
@@ -50,6 +51,7 @@ CONNECTOR_REGISTRY: dict[str, type[SQLDatabase]] = {
     "duckdb": DuckDBDatabase,
     "snowflake": SnowflakeDatabase,
     "spanner": SpannerDatabase,
+    "bigquery": BigQueryDatabase,
     "clickhouse": ClickHouseDatabase,
     "heavydb": HeavyDBDatabase,
     "kyuubi": KyuubiDatabase,
