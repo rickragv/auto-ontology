@@ -490,8 +490,9 @@ community emulator.
      -f docker-compose.gcp-adc.yml up -d
    ```
 
-   A backend started with `uv run` on the host finds the credentials by
-   itself.
+   On Windows the file is
+   `%APPDATA%\gcloud\application_default_credentials.json`. A backend started
+   with `uv run` on the host finds the credentials by itself.
 
 5. Ingestion starts by itself. Turn on **Settings → Semantic Compilation** if
    it is off. When the ontology is ready, ask a question such as "How many
