@@ -64,6 +64,7 @@ dependencies = [
     # route without it.
     "python-multipart>=0.0.32",
     "google-cloud-spanner>=3.72.0",
+    "google-cloud-bigquery>=3.47.0",
 ]
 
 [project.optional-dependencies]
