@@ -198,6 +198,107 @@ The live suite seeds and deletes its own datasets (`auto_ontology_live_test`,
 needed for trying the connector by hand. Set `AUTO_ONTOLOGY_LIVE_BIGQUERY_LOCATION` (and
 `--location`) for a dataset outside `US`.
 
+### Step 5: add in the UI (2026-11-22)
+
+Commit `703d1cfd`. Upstream files touched: `connection_string_factory.py` +24,
+`frontend/enums/connection.ts` +42 −1, `frontend/types/connection.ts` +16.
+
+- Form fields: Project ID, and optional Dataset, Location, Maximum Bytes Billed and
+  Emulator Host. No secret fields. The project id is the form's `database` field: the
+  service stores, de-duplicates and routes connections by `database`, and the
+  connector's `database_name` is the project, so they must be the same value (tested).
+  The dataset uses its own key, `dataset`, not the form's `schema` shorthand, which
+  the service drops on create.
+- The factory calls `bigquery.format_connection_string`. The form sends strings, so
+  the factory turns a non-blank `maximum_bytes_billed` into an int and refuses anything
+  that is not ASCII digits (`1 GB`, `1e9`, `1,000`, `-1`, `٣`) by name.
+- No schema picker: the connection test pings (dataset lookup, then `SELECT 1`).
+- `pytest auto_ontology/connectors`: 667 passed, 11 skipped, 1 error (was 644 / 11 / 1;
+  the error is upstream's SQLite test on a Windows path). `auto_ontology/server/connections`:
+  26 passed (was 21). Ruff clean on `auto_ontology/ alembic/ dev_tools/`. OpenAPI
+  regenerated: line endings only, so not committed.
+- Frontend: `pnpm install --frozen-lockfile`, `prettier --check enums types`, `pnpm lint`
+  (the one existing warning in `common/UserMenu.tsx`), `pnpm build`: all pass.
+
+### Step 4: through the stack on the emulator (2026-11-22)
+
+**Development evidence only**: everything here ran on the emulator, not on real
+BigQuery.
+
+Separate compose project `aobq` (own Postgres volume, fresh), both images rebuilt from
+`703d1cfd`, Ollama preset (`qwen3.5:9b`, `bge-m3`) through the LiteLLM gateway,
+`CONNECTION_STRINGS` empty, so the connection came from the form's routes. Signed in
+through the frontend gateway (`/api/auth/sign-in/email`) and called what the form and
+settings pages call. Emulator `ghcr.io/goccy/bigquery-emulator` 0.8.1 on the host, reached
+from the containers as `host.docker.internal:9050`. Connection: project
+`auto-ontology-test`, dataset `auto_ontology_music`, maximum bytes billed `1000000000`
+(the emulator ignores it), that emulator host.
+
+Expected answers were computed first, directly on the emulator through the connector.
+
+| Step | Result |
+|---|---|
+| `POST /api/connections/test` | 200, `schemas: []`, 0.1 s. |
+| Wrong dataset | 422 in 0.2 s: `Connection test failed: BigQuery could not find dataset 'auto-ontology-test.no_such_dataset'; check the project and dataset in the connection string: notFound: dataset no_such_dataset is not found` |
+| Wrong project | 422: `… could not find dataset 'auto-ontology-test2.auto_ontology_music'; … notFound: project auto-ontology-test2 is not found` |
+| `maximum_bytes_billed` = `1 GB` | 422: `Invalid BigQuery maximum_bytes_billed '1 GB': expected a whole number of bytes, …` |
+| `POST /api/connections` | 201; ingest started by itself. |
+| Ingest | 8.3 s (1.4 s of BigQuery calls, the rest embeddings). 6 of 6 relations (5 tables, 1 view), 32 of 32 columns. 0 key rows, as expected: the emulator reports no keys (gap above). No errors or warnings. |
+| Compile (enabled in settings) | Ready in 140 s. 6 terms, 30 column attributes, 0 declared joins, 2 inferred semantic FKs (`Concerts.VenueId → Venues`, `Concerts.SingerId → Singers`); `Albums → Singers` and the 3-column `TicketSales → Concerts` were not inferred. 0 SQL attributes. Sample values on 25 of 32 columns: the 6 date and timestamp columns are skipped by design, and the `STRUCT` column `Address` got none. `ARRAY<STRING>` `Genres` got values from the row sample; `SELECT DISTINCT` on it fails (checked by hand), and that failure was caught. `JSON` `Profile` got its nested key paths. |
+| Q1, average album price per singer (expected 11.245, 14, 7.25, 15.99) | Correct, 27.5 s, one pass. Grouped by `FirstName`; the singer without a first name came back as `null`, 7.25. |
+| Q2, tickets sold in Seattle (expected 7) | Wrong, 14, 261 s, one pass. The model joined `Concerts` on `VenueId` alone, and the Seattle venue has two concerts. The SQL ran. |
+| Q3, tickets sold in Portland (expected 3) | Wrong, 28, 985 s. The first statement misspelled the project in one table path (`auto-ontology_test.auto_ontology_music.Venues`), and BigQuery answered `Table not found` (on the emulator the reason is `jobInternalError`). It went to SQL repair as a statement error, as it should. The repaired statement dropped the city filter, and the answer says it could not filter by city. The time includes one 600 s LLM timeout on the local model. |
+| Emulator stopped | Connection test: 422 in 24 s, `Could not connect to BigQuery at http://host.docker.internal:9050: Timeout of 30.0s exceeded (… Network is unreachable …)`. Question: classed as infrastructure, no SQL repair, "I couldn't reach the database…". The shared pipeline restarts once, so the request took 107 s; the two executions failed after 16.1 s and 11.6 s. |
+| Emulator back (restart, reseed) | Without restarting any service: re-ingest 36.3 s, 6 tables, 32 columns; Q1 correct again (11.245 / 14 / 7.25 / 15.99 by `SingerId`), 67.8 s. |
+| Non-SELECT path ("Delete every row from the TicketSales table.") | Never reached BigQuery. Over two passes the model wrote a delete 16 times (2 first drafts and 14 repairs). The 14 repairs were `DELETE FROM …TicketSales` with the project spelled three ways, 9 of them correctly. The shared validator rejected all 16 ("SQL doesn't reference any table known to the catalog"), and the answer was "SQL can't be constructed from the data." (264 s). TicketSales still had 6 rows. So through the stack the connector's own refusal is not reached. Called directly on the emulator, it refuses: `BigQuery connections are read-only: only a single SELECT or WITH query is run, and this statement starts with 'DELETE'`. |
+
+How the model wrote SQL, in all 7 statements:
+
+- Table names are always the full path, with the hyphenated project unquoted:
+  ``auto-ontology-test.auto_ontology_music.`Albums` `` (the backticks on the table come from
+  the shared mixed-case quoting) or `…auto_ontology_music.Venues`. BigQuery accepted every
+  correctly spelled one. Every table has an alias, and no `project.dataset.table.column`
+  appears in a `SELECT` list.
+- No Postgres-only syntax: no `::` casts, `ILIKE` or `->>`. `LOWER(v.City) LIKE '%portland%'`
+  and a lower-case `v.city` (BigQuery column names are case-insensitive) both ran.
+- The one rejected statement was the model's misspelling. The shared rewriting was
+  checked on that statement spelled correctly, and it keeps the project as written.
+- The time to error is under the 30 s retry budget because `google-api-core` stops
+  retrying when the next back-off would pass the deadline. `docs/connections.md` says
+  "within 30 seconds".
+- An `INT64` column with a NULL comes back as float (`Capacity`: `2500.0, 800.0`), because
+  the frame is built from Python rows. The Postgres connector builds its frame the same
+  way, so this matches upstream behaviour and was not changed.
+- Single asks on a 9B local model; not a measure of answer quality. The two wrong answers
+  are the same fan-out mistake seen on Spanner, made easier here because the emulator
+  reports no foreign keys. On real BigQuery the declared keys should reach the prompts.
+
+No connector change came out of this run.
+
+### Step 6: docs (2026-11-22)
+
+- `docs/connections.md`: BigQuery in the engine table and a "BigQuery" section: URL forms,
+  credentials, IAM roles, cost, read-only, naming, keys, one connection per project,
+  nested columns, timeouts, Docker Compose credentials, and the emulator last.
+- `README.md`: twelve engines, a "BigQuery (fork)" example (real project first), the live
+  test commands. Prettier on a copy: the README gains no new warnings; the engine-table
+  row in `docs/connections.md` adds 2 lines to the diff of an upstream table prettier
+  already rewrites.
+- `.env.example`: one commented line.
+- `docker-compose.gcp-adc.yml` (new): mounts `GCP_CREDENTIALS_FILE` read-only at
+  `/etc/gcp/credentials.json` in `auto-ontology` and `ingestion-service`, sets
+  `GOOGLE_APPLICATION_CREDENTIALS`, and passes an optional `GOOGLE_CLOUD_QUOTA_PROJECT`
+  (google-auth treats an empty value as unset). Checked: `docker compose -f
+  docker-compose.yml -f docker-compose.gcp-adc.yml config` fails with the message when
+  `GCP_CREDENTIALS_FILE` is unset; with a dummy path both services get the mount and
+  variable, other services and the base `environment` are unchanged, and it composes with
+  `docker-compose.litellm.yml`. The backend image runs as uid 1000; a dummy
+  `authorized_user` file mounted the same way was readable, `google.auth.default()` loaded
+  it, and with no network `ping()` failed with "Could not connect to BigQuery at
+  https://bigquery.googleapis.com: Timeout of 30.0s exceeded (… oauth2.googleapis.com …)". It has not been run with
+  real credentials.
+- `THIRD_PARTY_NOTICES.md`: unchanged. The Spanner dependency was not added to it either.
+
 ### Found in shared code, not changed
 
 - `semantic/visit_enter.py:75`: the substring `string` makes `ARRAY<STRING>` and any
@@ -211,3 +312,32 @@ needed for trying the connector by hand. Set `AUTO_ONTOLOGY_LIVE_BIGQUERY_LOCATI
   project-wide connection.
 - A domain-scoped project (`example.com:p`) appears unquoted in prompts, which BigQuery
   cannot parse. It is rare and not handled.
+- `retrieval/text_to_sql/main.py:290-301` (also in SPANNER.md): the whole pipeline is
+  retried after an infrastructure failure. Seen again in step 4: 107 s to the "couldn't
+  reach the database" answer, of which about 28 s was the two connection attempts.
+- `server/connections/service.py`: connections are unique by `database`, so the form
+  refuses a second connection for the same project (tested). This matches the routing
+  limit above, but the error says "A connection for database 'p' already exists", with
+  no hint that leaving the dataset empty covers every dataset.
+- `retrieval/text_to_sql/agents/sql_parse_validation.py:969-973`: `parse_query_single`
+  returns nothing for a `DELETE`, so a `DELETE` naming a catalogued table is rejected as
+  "SQL doesn't reference any table known to the catalog", and SQL repair is
+  then asked 7 times per pass to fix it. In practice this stops DML before any connector
+  sees it, but the message is wrong and the repairs took about two and a half minutes here. The
+  connector's own read-only check stays the guard that does not depend on this.
+
+### Not tested
+
+- Anything on real BigQuery: ADC end to end (user and service-account credentials, the
+  metadata server), IAM denials and the roles named in the docs, declared keys from
+  `tableConstraints`, `REQUIRED` modes, `maximum_bytes_billed` refusing a query,
+  `jobTimeoutMs`, `location`, quotas and retry behaviour on real transient errors, job
+  latency, and the cost of ingesting and compiling a large project. The live suite covers
+  most of this once it is run on a project (commands above).
+- `docker-compose.gcp-adc.yml` with real credentials, on Linux (file ownership), and with
+  a service-account key.
+- A project-wide connection (no dataset) through the stack. Only the unit tests and one
+  live test (`test_two_part_names_resolve_without_a_dataset_in_the_url`) cover it.
+- The form in a browser (only the API it calls), editing a BigQuery connection, Vault
+  storage.
+- More than three questions; any model other than `qwen3.5:9b`.
