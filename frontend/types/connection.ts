@@ -84,6 +84,21 @@ export type SpannerConnectionParams = {
 	emulator_host?: string;
 };
 
+/** No credentials: the server uses Application Default Credentials, or none for an emulator. */
+export type BigQueryConnectionParams = {
+	type: ConnectionType.BIGQUERY;
+	/** The project id. It names the connection, so it is stored as `database`. */
+	database: string;
+	/** Ingest only this dataset. Empty means every dataset in the project. */
+	dataset?: string;
+	/** Job location, such as `US` or `EU`. Empty lets BigQuery infer it. */
+	location?: string;
+	/** Whole number of bytes set on every query job. Empty means no limit. */
+	maximum_bytes_billed?: string;
+	/** `host:port` of a BigQuery emulator. Empty means BigQuery. */
+	emulator_host?: string;
+};
+
 /**
  * Ingestion filters offered on every connector, regardless of type.
  *
@@ -106,6 +121,7 @@ export type ConnectionParams = (
 	| SnowflakeConnectionParams
 	| HeavyDBConnectionParams
 	| SpannerConnectionParams
+	| BigQueryConnectionParams
 ) &
 	TableFilterParams;
 

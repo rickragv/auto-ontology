@@ -256,6 +256,30 @@ def build_connection_string(connection: Mapping[str, Any]) -> str:
             emulator_host=str(connection.get("emulator_host") or "").strip() or None,
         )
 
+    if conn_type == "bigquery":
+        # No credentials: the connector uses Application Default Credentials,
+        # or none for an emulator. ``database`` holds the project id, because
+        # the connector's ``database_name`` is the project and connections are
+        # stored and routed by that name. The connector owns the URL shape.
+        from auto_ontology.connectors.bigquery import format_connection_string
+
+        def optional(key: str) -> str | None:
+            return str(connection.get(key) or "").strip() or None
+
+        limit = optional("maximum_bytes_billed")
+        if limit is not None and not (limit.isascii() and limit.isdigit()):
+            raise ValueError(
+                f"Invalid BigQuery maximum_bytes_billed {limit!r}: expected a whole "
+                "number of bytes, e.g. 1000000000 for 1 GB"
+            )
+        return format_connection_string(
+            project=_require(connection, "database"),
+            dataset=optional("dataset"),
+            emulator_host=optional("emulator_host"),
+            location=optional("location"),
+            maximum_bytes_billed=None if limit is None else int(limit),
+        )
+
     if conn_type == "heavydb":
         host = _require(connection, "host").rstrip("/")
         user = _require(connection, "user")

@@ -35,6 +35,7 @@ from auto_ontology.connectors.bigquery import (
     check_read_only,
     format_connection_string,
 )
+from auto_ontology.connectors.connection_string_factory import build_connection_string
 from auto_ontology.connectors.db_errors import is_infrastructure_error
 from auto_ontology.connectors.registry import CONNECTOR_REGISTRY, create_connector
 from auto_ontology.retrieval.text_to_sql.agents.sql_parse_validation import (
@@ -327,6 +328,112 @@ def test_format_refuses_values_that_would_not_round_trip(
 ) -> None:
     with pytest.raises(ValueError, match=message):
         format_connection_string(**parts)
+
+
+# ----------------------------------------------------------------------
+# Connections added in the UI (connection_string_factory)
+# ----------------------------------------------------------------------
+
+
+def _ui_connection(**overrides: object) -> dict[str, object]:
+    """What the form sends: every value a string, blank when left empty."""
+    connection: dict[str, object] = {
+        "type": "bigquery",
+        "database": PROJECT,
+        "dataset": "music",
+        "location": "",
+        "maximum_bytes_billed": "",
+        "emulator_host": "",
+    }
+    connection.update(overrides)
+    return connection
+
+
+def test_factory_builds_a_real_bigquery_url_without_emulator() -> None:
+    assert build_connection_string(_ui_connection()) == URL
+
+
+def test_factory_without_a_dataset_is_project_wide() -> None:
+    assert build_connection_string(_ui_connection(dataset="  ")) == PROJECT_URL
+    assert build_connection_string(_ui_connection(dataset=None)) == PROJECT_URL
+
+
+def test_factory_adds_every_optional_part() -> None:
+    connection = _ui_connection(
+        emulator_host=" localhost:9050 ",
+        location=" EU ",
+        maximum_bytes_billed=" 5 ",
+    )
+    assert build_connection_string(connection) == (
+        f"{URL}?emulator_host=localhost:9050&location=EU&maximum_bytes_billed=5"
+    )
+
+
+@pytest.mark.parametrize(
+    ("project", "dataset", "emulator_host", "location", "limit"),
+    [
+        (PROJECT, "music", None, None, None),
+        (PROJECT, None, None, "us-central1", "1000000000"),
+        ("example.com:my-project", "d_1", "localhost:9050", "EU", None),
+        ("p", "d", "host.docker.internal:9050", None, "1"),
+        ("p", None, "[::1]:9050", None, None),
+    ],
+)
+def test_factory_output_parses_back_to_the_same_parts(
+    project: str,
+    dataset: str | None,
+    emulator_host: str | None,
+    location: str | None,
+    limit: str | None,
+) -> None:
+    url = build_connection_string(
+        _ui_connection(
+            database=project,
+            dataset=dataset or "",
+            emulator_host=emulator_host or "",
+            location=location or "",
+            maximum_bytes_billed=limit or "",
+        )
+    )
+    assert bigquery_module._parse_connection_string(url) == {
+        "project": project,
+        "dataset": dataset,
+        "emulator_host": emulator_host,
+        "location": location,
+        "maximum_bytes_billed": None if limit is None else int(limit),
+    }
+    # Stored connections are routed by ``database``; it must be this name.
+    assert BigQueryDatabase(url).database_name == project
+
+
+@pytest.mark.parametrize("blank", ["", "   ", None])
+def test_factory_requires_the_project(blank: str | None) -> None:
+    with pytest.raises(ValueError, match="missing required field: 'database'"):
+        build_connection_string(_ui_connection(database=blank))
+
+
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"database": "my project"}, "Invalid BigQuery project id"),
+        ({"database": "p/x"}, "Invalid BigQuery project id"),
+        ({"dataset": "a-b"}, "Invalid BigQuery dataset id"),
+        ({"dataset": "music?x=1"}, "Invalid BigQuery dataset id"),
+        ({"location": "EU&x=1"}, "Invalid BigQuery location"),
+        ({"emulator_host": "localhost"}, "Invalid BigQuery emulator_host"),
+        ({"emulator_host": "http://localhost:9050"}, "Invalid BigQuery emulator_host"),
+        ({"maximum_bytes_billed": "0"}, "Invalid BigQuery maximum_bytes_billed"),
+        ({"maximum_bytes_billed": "1e9"}, "Invalid BigQuery maximum_bytes_billed"),
+        ({"maximum_bytes_billed": "1,000"}, "Invalid BigQuery maximum_bytes_billed"),
+        ({"maximum_bytes_billed": "-1"}, "Invalid BigQuery maximum_bytes_billed"),
+        ({"maximum_bytes_billed": "٣"}, "Invalid BigQuery maximum_bytes_billed"),
+    ],
+)
+def test_factory_refuses_values_that_would_not_round_trip(
+    overrides: dict[str, str], message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        build_connection_string(_ui_connection(**overrides))
 
 
 # ----------------------------------------------------------------------

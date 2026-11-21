@@ -13,6 +13,7 @@ export enum ConnectionType {
 	TRINO = 'trino',
 	CLICKHOUSE = 'clickhouse',
 	SPANNER = 'spanner',
+	BIGQUERY = 'bigquery',
 }
 
 export const connectionDisplayName: Record<ConnectionType, string> = {
@@ -25,6 +26,7 @@ export const connectionDisplayName: Record<ConnectionType, string> = {
 	[ConnectionType.TRINO]: 'Trino',
 	[ConnectionType.CLICKHOUSE]: 'ClickHouse',
 	[ConnectionType.SPANNER]: 'Cloud Spanner',
+	[ConnectionType.BIGQUERY]: 'BigQuery',
 };
 
 export const isConnectionType = (value: string | null | undefined): value is ConnectionType =>
@@ -53,7 +55,10 @@ export type ConnectionFieldKey =
 	| 'table_deny_regex'
 	| 'project_id'
 	| 'instance_id'
-	| 'emulator_host';
+	| 'emulator_host'
+	| 'dataset'
+	| 'location'
+	| 'maximum_bytes_billed';
 
 export type ConnectionField = {
 	key: ConnectionFieldKey;
@@ -283,6 +288,42 @@ export const CONNECTION_FIELDS: Record<ConnectionType, ConnectionField[]> = {
 			placeholder: 'Leave Empty for Cloud Spanner',
 			optional: true,
 			hint: 'host:port of a Spanner emulator, such as localhost:9010. Leave empty to connect to Cloud Spanner with the server’s Application Default Credentials.',
+		},
+	],
+	[ConnectionType.BIGQUERY]: [
+		{
+			key: 'database',
+			label: 'Project ID',
+			placeholder: 'my-project',
+			hint: 'The project that holds the data and runs, and is billed for, the queries. One connection per project: leave Dataset empty to cover several datasets.',
+		},
+		{
+			key: 'dataset',
+			label: 'Dataset',
+			placeholder: 'Leave Empty to Ingest Every Dataset',
+			optional: true,
+			hint: 'Ingest only this dataset; it is also the default dataset of every query. Leave empty to ingest every dataset in the project.',
+		},
+		{
+			key: 'location',
+			label: 'Location',
+			placeholder: 'US',
+			optional: true,
+			hint: 'Where query jobs run, such as US, EU or us-central1. Leave empty to let BigQuery infer it from the tables a query reads.',
+		},
+		{
+			key: 'maximum_bytes_billed',
+			label: 'Maximum Bytes Billed',
+			placeholder: '1000000000',
+			optional: true,
+			hint: 'A whole number of bytes, set on every query job: a query that would bill more fails without being charged. Leave empty for no limit beyond the project’s own.',
+		},
+		{
+			key: 'emulator_host',
+			label: 'Emulator Host',
+			placeholder: 'Leave Empty for BigQuery',
+			optional: true,
+			hint: 'host:port of a BigQuery emulator, for development only. Leave empty to connect to BigQuery with the server’s Application Default Credentials.',
 		},
 	],
 };
