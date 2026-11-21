@@ -384,7 +384,7 @@ in the [OpenAPI spec](./docs/openapi/auto-ontology-api.json).
 
 ### Sources
 
-Auto-Ontology connects to eleven engines:
+Auto-Ontology connects to twelve engines:
 
 - PostgreSQL
 - MySQL
@@ -395,6 +395,7 @@ Auto-Ontology connects to eleven engines:
 - Apache Kyuubi
 - HeavyDB
 - Cloud Spanner (fork; tested on the local emulator only)
+- BigQuery (fork; written for real projects, not yet run on real BigQuery)
 - DuckDB
 - SQLite
 
@@ -442,6 +443,72 @@ For a real database, leave the emulator host out
 Default Credentials. Only GoogleSQL-dialect databases are supported, and every
 statement runs read-only. Details and limits are in
 [docs/connections.md](./docs/connections.md#cloud-spanner).
+
+#### BigQuery (fork)
+
+This fork adds Google BigQuery as a source. It is used like PostgreSQL:
+connect, ingest, build the ontology, ask questions. It is written for a real
+Google Cloud project, but it has not yet been run on real BigQuery, only on a
+community emulator.
+
+1. Sign in with Application Default Credentials. The account needs BigQuery
+   Job User on the project and BigQuery Data Viewer on the data:
+
+   ```sh
+   gcloud auth application-default login
+   ```
+
+2. Optionally, create the small sample dataset `auto_ontology_music` (a few KB,
+   within BigQuery's free tier):
+
+   ```sh
+   uv run python -m dev_tools.fixtures.seed_bigquery --project <your-project>
+   ```
+
+3. Add the connection. Either set it in `.env` before starting the stack:
+
+   ```sh
+   CONNECTION_STRINGS=bigquery://<your-project>/auto_ontology_music
+   ```
+
+   or add it under **Settings → Connections → BigQuery**:
+
+   | Field                | Value                                       |
+   | -------------------- | ------------------------------------------- |
+   | Project ID           | `<your-project>`                            |
+   | Dataset              | `auto_ontology_music` (empty for all)       |
+   | Location             | empty, or `US`, `EU`, …                     |
+   | Maximum Bytes Billed | empty, or a byte limit such as `1000000000` |
+   | Emulator Host        | empty                                       |
+
+4. In Docker Compose, give the containers the credentials with the optional
+   override:
+
+   ```sh
+   export GCP_CREDENTIALS_FILE="$HOME/.config/gcloud/application_default_credentials.json"
+   docker compose -f docker-compose.yml -f docker-compose.litellm.yml \
+     -f docker-compose.gcp-adc.yml up -d
+   ```
+
+   A backend started with `uv run` on the host finds the credentials by
+   itself.
+
+5. Ingestion starts by itself. Turn on **Settings → Semantic Compilation** if
+   it is off. When the ontology is ready, ask a question such as "How many
+   tickets were sold for concerts in Seattle?".
+
+To run the connector's live tests against your project (they create and delete
+their own datasets):
+
+```sh
+AUTO_ONTOLOGY_LIVE_BIGQUERY_PROJECT=<your-project> uv run pytest auto_ontology/connectors/tests/test_bigquery_live.py -q -rs
+uv run python -m dev_tools.fixtures.seed_bigquery --project <your-project> --delete
+```
+
+The second command deletes the sample dataset from step 2. For development
+without Google Cloud there is an emulator setup in
+[docs/connections.md](./docs/connections.md#bigquery), along with the
+permissions, cost controls and limits.
 
 ### Models
 
